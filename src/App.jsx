@@ -5,6 +5,7 @@ import Today from './pages/Today';
 import Dashboard from './pages/Dashboard';
 import BodyTracker from './pages/BodyTracker';
 import Settings from './pages/Settings';
+import Onboarding from './components/Onboarding';
 import { seedDatabase } from './db/seed';
 
 const pageVariants = {
@@ -16,10 +17,21 @@ const pageVariants = {
 export default function App() {
   const [activeTab, setActiveTab] = useState('today');
   const [ready, setReady] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   useEffect(() => {
+    // Check if first time
+    const hasSeen = localStorage.getItem('hasSeenOnboarding');
+    if (!hasSeen) {
+      setShowOnboarding(true);
+    }
     seedDatabase().then(() => setReady(true));
   }, []);
+
+  function handleOnboardingComplete() {
+    localStorage.setItem('hasSeenOnboarding', 'true');
+    setShowOnboarding(false);
+  }
 
   if (!ready) {
     return (
@@ -35,20 +47,25 @@ export default function App() {
   function renderPage() {
     switch (activeTab) {
       case 'today':
-        return <Today />;
+        return <Today navigate={setActiveTab} />;
       case 'dashboard':
-        return <Dashboard />;
+        return <Dashboard navigate={setActiveTab} />;
       case 'body':
-        return <BodyTracker />;
+        return <BodyTracker navigate={setActiveTab} />;
       case 'settings':
-        return <Settings />;
+        return <Settings navigate={setActiveTab} />;
       default:
-        return <Today />;
+        return <Today navigate={setActiveTab} />;
     }
   }
 
   return (
     <div className="min-h-screen bg-[#09090b] text-white">
+      {/* Onboarding Overlay */}
+      <AnimatePresence>
+        {showOnboarding && <Onboarding onComplete={handleOnboardingComplete} />}
+      </AnimatePresence>
+
       {/* Top Status Bar area */}
       <div className="h-[env(safe-area-inset-top)]" />
 

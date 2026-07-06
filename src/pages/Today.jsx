@@ -5,7 +5,8 @@ import { format } from 'date-fns';
 import {
   Flame, ChevronDown, ChevronUp, Sparkles,
   Calendar, Menu, ClipboardList, X, Zap,
-  Droplets, Sun, Moon, Sunset,
+  ChevronRight, HelpCircle,
+  Sun, Moon, Sunset,
 } from 'lucide-react';
 import CalendarModal from '../components/CalendarModal';
 import NonRegularDrawer from '../components/NonRegularDrawer';
@@ -19,6 +20,8 @@ import {
 } from '../utils/helpers';
 import ProgressRing from '../components/ProgressRing';
 import HabitCard from '../components/HabitCard';
+import LiveClock from '../components/LiveClock';
+import AppGuide from '../components/AppGuide';
 
 const CHRONOLOGICAL_SLOTS = ['morning', 'afternoon', 'evening', 'night'];
 
@@ -29,12 +32,15 @@ const SLOT_META = {
   night:     { label: 'Night',     emoji: '🌙', Icon: Moon,   gradient: 'from-indigo-500/10 to-transparent',   accent: '#6366f1' },
 };
 
-export default function Today() {
+export default function Today({ navigate }) {
   const today     = getToday();
   const dayOfWeek = getDayOfWeek();
 
   const [activeTracker,    setActiveTracker]    = useState('both');
   const [collapsedSlots,   setCollapsedSlots]   = useState({});
+  const [showCalendar, setShowCalendar]     = useState(false);
+  const [showNonRegular, setShowNonRegular] = useState(false);
+  const [showGuide, setShowGuide]           = useState(false);
   const [showCalendarModal,setShowCalendarModal] = useState(false);
   const [showLeftDrawer,   setShowLeftDrawer]   = useState(false);
   const [showRightDrawer,  setShowRightDrawer]  = useState(false);
@@ -89,15 +95,6 @@ export default function Today() {
     });
     return g;
   }, [fitnessHabits, wellnessHabits]);
-
-  const greeting = useMemo(() => {
-    const h = new Date().getHours();
-    if (h < 5)  return { text: 'Good Night',      sub: 'Rest well, champ' };
-    if (h < 12) return { text: 'Good Morning',    sub: 'Let\'s crush it today 💥' };
-    if (h < 17) return { text: 'Good Afternoon',  sub: 'Keep the momentum 🚀' };
-    if (h < 21) return { text: 'Good Evening',    sub: 'Almost there, stay strong 🌟' };
-    return             { text: 'Good Night',      sub: 'Wind down & recover 🌙' };
-  }, []);
 
   async function toggleHabit(habitId) {
     const key = [today, habitId];
@@ -183,20 +180,16 @@ export default function Today() {
         <div className="lg:col-span-6 col-span-1 space-y-5">
 
           {/* ── Mobile Top Bar ── */}
-          <div className="flex items-center justify-between lg:hidden">
+          <div className="flex items-center justify-between lg:hidden mb-2">
             <button
-              onClick={() => setShowLeftDrawer(true)}
-              className="w-10 h-10 rounded-2xl flex items-center justify-center text-zinc-400 hover:text-white transition-all active:scale-90 cursor-pointer"
-              style={{ background: 'rgba(39,39,42,0.7)', border: '1px solid rgba(255,255,255,0.07)' }}
+              onClick={() => setShowGuide(true)}
+              className="w-10 h-10 rounded-2xl flex items-center justify-center text-zinc-400 hover:text-white transition-all active:scale-90 cursor-pointer bg-zinc-800/80 border border-white/10"
             >
-              <Menu size={17} />
+              <HelpCircle size={17} />
             </button>
 
-            <div className="text-center">
-              <p className="text-zinc-600 text-[11px] font-medium">{format(new Date(), 'EEEE, MMM d')}</p>
-              <h1 className="text-lg font-black bg-gradient-to-r from-white via-zinc-200 to-zinc-500 bg-clip-text text-transparent leading-tight">
-                {greeting.text} ✨
-              </h1>
+            <div className="flex-1">
+              <LiveClock isMobile={true} />
             </div>
 
             <div className="flex items-center gap-1.5">
@@ -219,21 +212,21 @@ export default function Today() {
 
           {/* ── Desktop Header ── */}
           <div className="hidden lg:flex items-center justify-between">
-            <div>
-              <p className="text-zinc-600 text-xs">{format(new Date(), 'EEEE, MMMM d, yyyy')}</p>
-              <h1 className="text-2xl font-black bg-gradient-to-r from-white via-zinc-200 to-zinc-500 bg-clip-text text-transparent mt-0.5">
-                {greeting.text} ✨
-              </h1>
-              <p className="text-xs text-zinc-500 mt-0.5">{greeting.sub}</p>
+            <LiveClock isMobile={false} />
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowGuide(true)}
+                className="w-10 h-10 rounded-xl bg-zinc-800/80 hover:bg-zinc-700 flex items-center justify-center border border-white/5 transition-colors cursor-pointer"
+              >
+                <HelpCircle size={16} className="text-zinc-400" />
+              </button>
+              <button
+                onClick={() => setShowCalendar(true)}
+                className="w-10 h-10 rounded-xl bg-zinc-800/80 hover:bg-zinc-700 flex items-center justify-center border border-white/5 transition-colors cursor-pointer"
+              >
+                <Calendar size={16} className="text-zinc-400" />
+              </button>
             </div>
-            <button
-              onClick={() => setShowCalendarModal(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-semibold text-zinc-400 hover:text-white transition-all cursor-pointer active:scale-95"
-              style={{ background: 'rgba(39,39,42,0.7)', border: '1px solid rgba(255,255,255,0.07)' }}
-            >
-              <Calendar size={15} />
-              Calendar
-            </button>
           </div>
 
           {/* ── Hero Progress Card ── */}
@@ -360,132 +353,160 @@ export default function Today() {
             </div>
           </motion.div>
 
-          {/* ── Slot-grouped Habit Checklist ── */}
-          <div className="space-y-4">
-            {CHRONOLOGICAL_SLOTS.map((slot) => {
-              const { fitness, wellness } = groupedHabits[slot];
-              if (fitness.length === 0 && wellness.length === 0) return null;
+          {/* ── Slot-grouped Habit Checklist or Empty State ── */}
+          {allHabits.length === 0 ? (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="rounded-3xl overflow-hidden p-8 text-center border"
+              style={{
+                background: 'linear-gradient(145deg, rgba(30,30,36,0.95), rgba(18,18,22,0.95))',
+                borderColor: 'rgba(255,255,255,0.05)',
+                backdropFilter: 'blur(12px)',
+              }}
+            >
+              <div className="w-16 h-16 rounded-full bg-purple-500/10 flex items-center justify-center mx-auto mb-4 border border-purple-500/20 shadow-[0_0_20px_rgba(168,85,247,0.15)]">
+                <Sparkles size={28} className="text-purple-400" />
+              </div>
+              <h2 className="text-xl font-black text-white mb-2 tracking-tight">Your Routine is Empty</h2>
+              <p className="text-zinc-400 text-sm mb-6 max-w-[250px] mx-auto leading-relaxed">
+                Start building your perfect day. Create your first habit in settings to get started.
+              </p>
+              <button
+                onClick={() => navigate('settings')}
+                className="mx-auto flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-black text-white transition-all active:scale-95 shadow-lg"
+                style={{ background: 'linear-gradient(135deg, #a855f7, #8b5cf6)' }}
+              >
+                Create Habit <ChevronRight size={16} />
+              </button>
+            </motion.div>
+          ) : (
+            <div className="space-y-4">
+              {CHRONOLOGICAL_SLOTS.map((slot) => {
+                const { fitness, wellness } = groupedHabits[slot];
+                if (fitness.length === 0 && wellness.length === 0) return null;
 
-              const meta = SLOT_META[slot];
-              let completedCount = 0;
-              let totalCount = 0;
+                const meta = SLOT_META[slot];
+                let completedCount = 0;
+                let totalCount = 0;
 
-              if (activeTracker !== 'wellness') {
-                completedCount += fitness.filter((h)  => completionMap[h.id]).length;
-                totalCount     += fitness.length;
-              }
-              if (activeTracker !== 'fitness') {
-                completedCount += wellness.filter((h) => completionMap[h.id]).length;
-                totalCount     += wellness.length;
-              }
-              if (totalCount === 0) return null;
+                if (activeTracker !== 'wellness') {
+                  completedCount += fitness.filter((h)  => completionMap[h.id]).length;
+                  totalCount     += fitness.length;
+                }
+                if (activeTracker !== 'fitness') {
+                  completedCount += wellness.filter((h) => completionMap[h.id]).length;
+                  totalCount     += wellness.length;
+                }
+                if (totalCount === 0) return null;
 
-              const isCollapsed = collapsedSlots[slot];
-              const isDone = completedCount === totalCount;
+                const isCollapsed = collapsedSlots[slot];
+                const isDone = completedCount === totalCount;
 
-              return (
-                <motion.div
-                  key={slot}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="rounded-3xl overflow-hidden"
-                  style={{
-                    border: `1px solid ${isDone ? 'rgba(16,185,129,0.2)' : 'rgba(255,255,255,0.05)'}`,
-                    background: 'rgba(18,18,22,0.7)',
-                    backdropFilter: 'blur(12px)',
-                  }}
-                >
-                  {/* Slot header button */}
-                  <button
-                    onClick={() => toggleSlotCollapse(slot)}
-                    className="w-full flex items-center justify-between px-4 py-3.5 cursor-pointer"
+                return (
+                  <motion.div
+                    key={slot}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="rounded-3xl overflow-hidden"
                     style={{
-                      background: isDone
-                        ? 'linear-gradient(135deg, rgba(16,185,129,0.08), transparent)'
-                        : `linear-gradient(135deg, rgba(30,30,35,0.8), transparent)`,
+                      border: `1px solid ${isDone ? 'rgba(16,185,129,0.2)' : 'rgba(255,255,255,0.05)'}`,
+                      background: 'rgba(18,18,22,0.7)',
+                      backdropFilter: 'blur(12px)',
                     }}
                   >
-                    <div className="flex items-center gap-3">
-                      {/* Time icon */}
-                      <div
-                        className="w-8 h-8 rounded-xl flex items-center justify-center text-sm"
-                        style={{ background: `${meta.accent}18`, border: `1px solid ${meta.accent}30` }}
-                      >
-                        {meta.emoji}
-                      </div>
-                      <div className="text-left">
-                        <p className="text-sm font-bold text-zinc-200 leading-tight">{meta.label}</p>
-                        <p className="text-[10px] text-zinc-600 mt-0.5">{completedCount}/{totalCount} tasks</p>
-                      </div>
-                      {isDone && (
-                        <motion.span
-                          initial={{ scale: 0 }}
-                          animate={{ scale: 1 }}
-                          className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                          style={{ background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.25)' }}
+                    {/* Slot header button */}
+                    <button
+                      onClick={() => toggleSlotCollapse(slot)}
+                      className="w-full flex items-center justify-between px-4 py-3.5 cursor-pointer"
+                      style={{
+                        background: isDone
+                          ? 'linear-gradient(135deg, rgba(16,185,129,0.08), transparent)'
+                          : `linear-gradient(135deg, rgba(30,30,35,0.8), transparent)`,
+                      }}
+                    >
+                      <div className="flex items-center gap-3">
+                        {/* Time icon */}
+                        <div
+                          className="w-8 h-8 rounded-xl flex items-center justify-center text-sm"
+                          style={{ background: `${meta.accent}18`, border: `1px solid ${meta.accent}30` }}
                         >
-                          ✓ Done
-                        </motion.span>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      {/* Mini progress bar */}
-                      <div className="w-16 h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
-                        <motion.div
-                          className="h-full rounded-full"
-                          style={{ background: isDone ? '#10b981' : meta.accent }}
-                          initial={{ width: '0%' }}
-                          animate={{ width: `${(completedCount / totalCount) * 100}%` }}
-                          transition={{ duration: 0.6, ease: 'easeOut' }}
-                        />
-                      </div>
-                      <motion.div
-                        animate={{ rotate: isCollapsed ? 0 : 180 }}
-                        transition={{ duration: 0.2 }}
-                      >
-                        <ChevronDown size={15} className="text-zinc-600" />
-                      </motion.div>
-                    </div>
-                  </button>
-
-                  {/* Habit list */}
-                  <AnimatePresence>
-                    {!isCollapsed && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.25 }}
-                        className="overflow-hidden"
-                      >
-                        <div className="px-3 pb-3 pt-1 space-y-2">
-                          {activeTracker !== 'wellness' && fitness.map((habit, idx) => (
-                            <HabitCard
-                              key={habit.id}
-                              habit={habit}
-                              completed={!!completionMap[habit.id]}
-                              onToggle={() => toggleHabit(habit.id)}
-                              index={idx}
-                            />
-                          ))}
-                          {activeTracker !== 'fitness' && wellness.map((habit, idx) => (
-                            <HabitCard
-                              key={habit.id}
-                              habit={habit}
-                              completed={!!completionMap[habit.id]}
-                              onToggle={() => toggleHabit(habit.id)}
-                              index={idx}
-                            />
-                          ))}
+                          {meta.emoji}
                         </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </motion.div>
-              );
-            })}
-          </div>
+                        <div className="text-left">
+                          <p className="text-sm font-bold text-zinc-200 leading-tight">{meta.label}</p>
+                          <p className="text-[10px] text-zinc-600 mt-0.5">{completedCount}/{totalCount} tasks</p>
+                        </div>
+                        {isDone && (
+                          <motion.span
+                            initial={{ scale: 0 }}
+                            animate={{ scale: 1 }}
+                            className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                            style={{ background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.25)' }}
+                          >
+                            ✓ Done
+                          </motion.span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {/* Mini progress bar */}
+                        <div className="w-16 h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
+                          <motion.div
+                            className="h-full rounded-full"
+                            style={{ background: isDone ? '#10b981' : meta.accent }}
+                            initial={{ width: '0%' }}
+                            animate={{ width: `${(completedCount / totalCount) * 100}%` }}
+                            transition={{ duration: 0.6, ease: 'easeOut' }}
+                          />
+                        </div>
+                        <motion.div
+                          animate={{ rotate: isCollapsed ? 0 : 180 }}
+                          transition={{ duration: 0.2 }}
+                        >
+                          <ChevronDown size={15} className="text-zinc-600" />
+                        </motion.div>
+                      </div>
+                    </button>
+
+                    {/* Habit list */}
+                    <AnimatePresence>
+                      {!isCollapsed && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.25 }}
+                          className="overflow-hidden"
+                        >
+                          <div className="px-3 pb-3 pt-1 space-y-2">
+                            {activeTracker !== 'wellness' && fitness.map((habit, idx) => (
+                              <HabitCard
+                                key={habit.id}
+                                habit={habit}
+                                completed={!!completionMap[habit.id]}
+                                onToggle={() => toggleHabit(habit.id)}
+                                index={idx}
+                              />
+                            ))}
+                            {activeTracker !== 'fitness' && wellness.map((habit, idx) => (
+                              <HabitCard
+                                key={habit.id}
+                                habit={habit}
+                                completed={!!completionMap[habit.id]}
+                                onToggle={() => toggleHabit(habit.id)}
+                                index={idx}
+                              />
+                            ))}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </motion.div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* ─────────────────────────────────────────────────────────
@@ -564,11 +585,11 @@ export default function Today() {
         )}
       </AnimatePresence>
 
-      {/* Calendar Modal */}
+      {/* ── Modals ── */}
       <AnimatePresence>
-        {showCalendarModal && (
-          <CalendarModal isOpen={showCalendarModal} onClose={() => setShowCalendarModal(false)} />
-        )}
+        {showCalendar && <CalendarModal onClose={() => setShowCalendar(false)} logs={logs} today={today} />}
+        {showNonRegular && <NonRegularDrawer onClose={() => setShowNonRegular(false)} />}
+        {showGuide && <AppGuide onClose={() => setShowGuide(false)} />}
       </AnimatePresence>
     </div>
   );

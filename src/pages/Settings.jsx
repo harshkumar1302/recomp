@@ -15,6 +15,7 @@ import {
   Settings as SettingsIcon,
   Database,
   ListTodo,
+  HelpCircle,
 } from 'lucide-react';
 import { db } from '../db/db';
 import { seedDatabase } from '../db/seed';
@@ -24,6 +25,7 @@ import {
   getTimeSlotLabel,
 } from '../utils/helpers';
 import HabitCard from '../components/HabitCard';
+import AppGuide from '../components/AppGuide';
 
 const ALL_DAYS = [1, 2, 3, 4, 5, 6, 0]; // Mon-Sun
 const CATEGORIES = ['body', 'hair', 'skin', 'diet', 'supplement'];
@@ -203,6 +205,7 @@ export default function Settings() {
   
   const [editingHabit, setEditingHabit] = useState(null);
   const [showHabitModal, setShowHabitModal] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
   const [apiKey, setApiKey] = useState(localStorage.getItem('gemini_api_key') || '');
   const [showKeySaved, setShowKeySaved] = useState(false);
   const [toast, setToast] = useState(null);
@@ -221,8 +224,9 @@ export default function Settings() {
   async function handleResetData() {
     if (window.confirm('⚠️ WARNING: This will delete ALL data (habits, logs, body stats) and seed defaults. Proceed?')) {
       try {
+        localStorage.removeItem('hasSeenOnboarding'); // Reset onboarding
         await seedDatabase();
-        showToast('Database reset to defaults.', 'success');
+        showToast('Database reset. Please refresh the page to see the Onboarding flow.', 'success');
       } catch (err) {
         showToast('Failed to reset database.', 'error');
       }
@@ -376,11 +380,19 @@ export default function Settings() {
             className="rounded-3xl p-6 border relative overflow-hidden"
             style={{ background: 'linear-gradient(145deg, rgba(30,30,36,0.7), rgba(18,18,22,0.9))', borderColor: 'rgba(255,255,255,0.05)' }}
           >
-            <div className="flex items-center gap-2 mb-6 pb-3 border-b border-white/5">
-              <div className="w-8 h-8 rounded-xl bg-cyan-500/10 flex items-center justify-center border border-cyan-500/20">
-                <Database size={14} className="text-cyan-400" />
+            <div className="flex items-center justify-between mb-6 pb-3 border-b border-white/5">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-cyan-500/10 flex items-center justify-center border border-cyan-500/20">
+                  <Database size={14} className="text-cyan-400" />
+                </div>
+                <h3 className="text-sm font-bold text-white tracking-wide">Data & Storage</h3>
               </div>
-              <h3 className="text-sm font-bold text-white tracking-wide">Data & Storage</h3>
+              <button
+                onClick={() => setShowGuide(true)}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-zinc-800/80 text-xs font-bold text-zinc-300 hover:text-white border border-white/5 transition-colors cursor-pointer"
+              >
+                <HelpCircle size={14} /> App Guide
+              </button>
             </div>
             
             <div className="space-y-3">
@@ -509,6 +521,7 @@ export default function Settings() {
         {showHabitModal && (
           <HabitEditor habit={editingHabit} onClose={() => setShowHabitModal(false)} />
         )}
+        {showGuide && <AppGuide onClose={() => setShowGuide(false)} />}
       </AnimatePresence>
 
     </div>

@@ -87,7 +87,7 @@ function CustomTooltip({ active, payload, label }) {
 
 /* ── Main Component ────────────────────────────────────────── */
 
-export default function Dashboard() {
+export default function Dashboard({ navigate }) {
   const habits = useLiveQuery(() => db.habits.toArray(), []);
   const logs = useLiveQuery(() => db.dailyLogs.toArray(), []);
   const bodyLogs = useLiveQuery(() => db.bodyLogs.orderBy('date').toArray(), []);
@@ -150,6 +150,39 @@ export default function Dashboard() {
           <div className="w-10 h-10 rounded-full border-2 border-cyan-500 border-t-transparent animate-spin" />
           <p className="text-zinc-600 text-xs animate-pulse">Loading analytics…</p>
         </div>
+      </div>
+    );
+  }
+
+  if (habits.length === 0 && logs.length === 0 && bodyLogs.length === 0) {
+    return (
+      <div className="max-w-7xl mx-auto px-1 flex flex-col items-center justify-center min-h-[70vh]">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="rounded-3xl p-8 max-w-md text-center border relative overflow-hidden"
+          style={{
+            background: 'linear-gradient(145deg, rgba(30,30,36,0.9), rgba(18,18,22,0.9))',
+            borderColor: 'rgba(255,255,255,0.05)',
+            backdropFilter: 'blur(16px)',
+          }}
+        >
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-40 h-40 bg-cyan-500/20 blur-[50px] rounded-full pointer-events-none" />
+          <div className="w-16 h-16 rounded-full bg-cyan-500/10 flex items-center justify-center mx-auto mb-4 border border-cyan-500/20 relative z-10">
+            <Activity size={28} className="text-cyan-400" />
+          </div>
+          <h2 className="text-xl font-black text-white mb-2 relative z-10">Nothing to Analyze Yet</h2>
+          <p className="text-zinc-400 text-sm mb-6 leading-relaxed relative z-10">
+            Your dashboard will automatically populate with streaks, adherence trends, and body metrics once you start logging data.
+          </p>
+          <button
+            onClick={() => navigate('settings')}
+            className="mx-auto flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-black text-white transition-all active:scale-95 shadow-lg relative z-10"
+            style={{ background: 'linear-gradient(135deg, #06b6d4, #0ea5e9)' }}
+          >
+            Create Your Routine
+          </button>
+        </motion.div>
       </div>
     );
   }

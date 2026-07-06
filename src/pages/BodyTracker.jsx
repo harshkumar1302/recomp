@@ -246,7 +246,21 @@ export default function BodyTracker() {
                 <p className="text-[10px] text-zinc-600 font-medium">Last logged: {format(new Date(latestLog.date + 'T00:00:00'), 'MMM d, yyyy')}</p>
               </div>
             ) : (
-              <p className="text-sm text-zinc-500">No logs yet. Log your weight to see stats.</p>
+              <div className="relative z-10 py-6 text-center">
+                <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center mx-auto mb-3 border border-blue-500/20">
+                  <Scale size={20} className="text-blue-400" />
+                </div>
+                <h3 className="text-lg font-bold text-white mb-2">No Stats Logged</h3>
+                <p className="text-xs text-zinc-400 mb-4 px-4">
+                  Log your body weight to track your recomp progress and calculate body fat estimates.
+                </p>
+                <button
+                  onClick={openNew}
+                  className="bg-blue-500 hover:bg-blue-400 text-white px-5 py-2.5 rounded-xl text-xs font-bold shadow-[0_0_15px_rgba(59,130,246,0.3)] transition-all cursor-pointer"
+                >
+                  Log First Entry
+                </button>
+              </div>
             )}
           </motion.div>
 
@@ -310,8 +324,14 @@ export default function BodyTracker() {
                   </AreaChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="w-full h-full flex items-center justify-center border border-dashed border-zinc-700/50 rounded-2xl bg-black/20 text-zinc-500 text-xs">
-                  Need at least 2 entries to chart trends.
+                <div className="w-full h-full flex flex-col items-center justify-center border border-dashed border-zinc-700/50 rounded-2xl bg-black/20 p-6 text-center">
+                  <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center mb-3">
+                    <Activity size={18} className="text-zinc-500" />
+                  </div>
+                  <h3 className="text-sm font-bold text-zinc-300 mb-1">Chart Your Trends</h3>
+                  <p className="text-xs text-zinc-500 max-w-[200px]">
+                    Log at least 2 entries to see your weight trend visualized here.
+                  </p>
                 </div>
               )}
             </div>

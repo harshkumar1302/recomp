@@ -56,12 +56,16 @@ function HabitEditor({ habit, onClose }) {
       type,
       frequency,
     };
-    if (isNew) {
-      await db.habits.add(data);
-    } else {
-      await db.habits.update(habit.id, data);
+    try {
+      if (isNew) {
+        await db.habits.add(data);
+      } else {
+        await db.habits.update(habit.id, data);
+      }
+      onClose();
+    } catch (err) {
+      console.error('Failed to save habit:', err);
     }
-    onClose();
   }
 
   return (
@@ -297,28 +301,38 @@ export default function Settings() {
 
   async function confirmDeleteHabit() {
     if (!confirmDelete) return;
-    await db.habits.delete(confirmDelete);
-    await db.dailyLogs.where('habitId').equals(confirmDelete).delete();
-    setConfirmDelete(null);
+    try {
+      await db.habits.delete(confirmDelete);
+      await db.dailyLogs.where('habitId').equals(confirmDelete).delete();
+    } catch (err) {
+      console.error('Failed to delete habit:', err);
+    } finally {
+      setConfirmDelete(null);
+    }
   }
 
   async function exportData() {
-    const data = {
-      habits: await db.habits.toArray(),
-      dailyLogs: await db.dailyLogs.toArray(),
-      bodyLogs: await db.bodyLogs.toArray(),
-      macroLogs: await db.macroLogs.toArray(),
-      exportedAt: new Date().toISOString(),
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], {
-      type: 'application/json',
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `recomp-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    try {
+      const data = {
+        habits: await db.habits.toArray(),
+        dailyLogs: await db.dailyLogs.toArray(),
+        bodyLogs: await db.bodyLogs.toArray(),
+        macroLogs: await db.macroLogs.toArray(),
+        exportedAt: new Date().toISOString(),
+        version: 2,
+      };
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `recomp-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('✅ Backup exported!');
+    } catch (err) {
+      console.error('Failed to export:', err);
+      showToast('❌ Export failed. Please try again.');
+    }
   }
 
   async function importData(event) {
@@ -352,11 +366,17 @@ export default function Settings() {
 
   async function clearAllData() {
     if (window.confirm('Are you sure? This will delete ALL data including habits and logs. This cannot be undone.')) {
-      await db.habits.clear();
-      await db.dailyLogs.clear();
-      await db.bodyLogs.clear();
-      await db.macroLogs.clear();
-      await seedDatabase();
+      try {
+        await db.habits.clear();
+        await db.dailyLogs.clear();
+        await db.bodyLogs.clear();
+        await db.macroLogs.clear();
+        await seedDatabase();
+        showToast('✅ All data cleared.');
+      } catch (err) {
+        console.error('Failed to clear data:', err);
+        showToast('❌ Failed to clear data. Please try again.');
+      }
     }
   }
 

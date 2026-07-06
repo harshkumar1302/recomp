@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { db } from '../db/db';
 import { getToday } from '../utils/helpers';
+import { parseQuantity, formatNumber } from '../utils/numberFormatters';
 import {
   Calculator, Trash2, Sparkles, Search, Plus, X,
   AlertTriangle, Camera, Loader2, ImageIcon, CheckCircle2,
@@ -211,6 +212,7 @@ function parseNutritionText(raw) {
   return { name, kcal, protein, carbs, fats };
 }
 
+
 /* ─────────────────────────────────────────────────────────────── */
 /* Main Calculator                                                 */
 /* ─────────────────────────────────────────────────────────────── */
@@ -226,6 +228,8 @@ export default function MacroCalculator() {
 
   // Cart
   const [selectedItems, setSelectedItems] = useState([]);
+  // Tracks the raw string the user is typing in each qty input (keyed by item id)
+  const [qtyInputs, setQtyInputs] = useState({});
 
   // Logged macros
   const [loggedMacros, setLoggedMacros] = useState(null);
@@ -247,7 +251,15 @@ export default function MacroCalculator() {
   }
 
   useEffect(() => {
-    db.macroLogs.get(today).then((log) => { if (log) setLoggedMacros(log); });
+    async function loadToday() {
+      try {
+        const log = await db.macroLogs.get(today);
+        if (log) setLoggedMacros(log);
+      } catch (err) {
+        console.error('Failed to load today macros:', err);
+      }
+    }
+    loadToday();
   }, [today]);
 
   // Close suggestions on outside click
@@ -370,77 +382,138 @@ Replace the 0s with the numeric values in grams/kcal.`;
       c:    parseFloat(form.carbs) || 0,
       f:    parseFloat(form.fats) || 0,
     };
-    setSelectedItems(prev => [
-      ...prev,
-      { id: `scanned_${Date.now()}`, key: 'scanned', food, qty: 1, unit: 'serving' }
-    ]);
+    const newItem = { id: `scanned_${Date.now()}`, key: 'scanned', food, qty: 1, unit: 'serving' };
+    setSelectedItems(prev => [...prev, newItem]);
+    setQtyInputs(prev => ({ ...prev, [newItem.id]: '1' }));
     setScanModal(null);
   }
 
   /* ── Food selection ──────────────────────────── */
   function addFood({ key, food }) {
-    setSelectedItems(prev => [
-      ...prev,
-      { id: `${key}_${Date.now()}`, key, food, qty: food.baseQty, unit: food.unit },
-    ]);
+    const newItem = { id: `${key}_${Date.now()}`, key, food, qty: food.baseQty, unit: food.unit };
+    setSelectedItems(prev => [...prev, newItem]);
+    setQtyInputs(prev => ({ ...prev, [newItem.id]: String(food.baseQty) }));
     setQuery('');
     setShowSuggestions(false);
   }
 
-  function updateQty(id, value) {
-    const num = parseFloat(value);
-    if (isNaN(num) || num < 0) return;
-    setSelectedItems(prev => prev.map(item => item.id === id ? { ...item, qty: num } : item));
+  // Called on every keystroke — only updates the displayed string, not the real qty
+  function handleQtyChange(id, raw) {
+    setQtyInputs(prev => ({ ...prev, [id]: raw }));
+  }
+
+  // Called on blur or Enter — commits the numeric value (or resets to previous)
+  function commitQty(id) {
+    setQtyInputs(prev => {
+      const raw = prev[id] ?? '';
+      const num = parseQuantity(raw);
+      if (!isNaN(num) && num >= 0) {
+        setSelectedItems(items =>
+          items.map(item => item.id === id ? { ...item, qty: num } : item)
+        );
+        return { ...prev, [id]: String(num) };
+      } else {
+        // revert display to the current committed qty
+        const current = selectedItems.find(i => i.id === id)?.qty ?? 1;
+        return { ...prev, [id]: String(current) };
+      }
+    });
   }
 
   function askDeleteItem(id) { setConfirmState({ type: 'item', id }); }
   function confirmDeleteItem() {
     if (!confirmState) return;
     setSelectedItems(prev => prev.filter(item => item.id !== confirmState.id));
+    setQtyInputs(prev => { const n = { ...prev }; delete n[confirmState.id]; return n; });
     setConfirmState(null);
   }
 
   function askReset() { setConfirmState({ type: 'reset' }); }
   async function confirmReset() {
-    await db.macroLogs.delete(today);
-    setLoggedMacros(null);
-    setSelectedItems([]);
-    setConfirmState(null);
+    try {
+      await db.macroLogs.delete(today);
+      setLoggedMacros(null);
+      setSelectedItems([]);
+      setQtyInputs({});
+    } catch (err) {
+      console.error('Failed to reset macros:', err);
+      alert('Failed to reset macros. Please try again.');
+    } finally {
+      setConfirmState(null);
+    }
   }
 
   /* ── Computed macros ─────────────────────────── */
+  // Uses the LIVE qtyInputs string so the preview updates every keystroke,
+  // not just after blur. Falls back to committed item.qty if the string is empty/invalid.
   const computedItems = useMemo(() =>
     selectedItems.map(item => {
-      const ratio = item.qty / item.food.baseQty;
+      const liveStr = qtyInputs[item.id];
+      const liveNum = liveStr !== undefined ? parseQuantity(liveStr) : NaN;
+      const effectiveQty = (!isNaN(liveNum) && liveNum >= 0) ? liveNum : item.qty;
+      const ratio = effectiveQty / item.food.baseQty;
       return {
         ...item,
+        effectiveQty,
         protein: parseFloat((item.food.p * ratio).toFixed(1)),
         carbs:   parseFloat((item.food.c * ratio).toFixed(1)),
         fats:    parseFloat((item.food.f * ratio).toFixed(1)),
         kcal:    Math.round(item.food.kcal * ratio),
       };
     }),
-  [selectedItems]);
+  [selectedItems, qtyInputs]);
 
   const totals = useMemo(() => {
     let p = 0, c = 0, f = 0, cal = 0;
     computedItems.forEach(i => { p += i.protein; c += i.carbs; f += i.fats; cal += i.kcal; });
-    return { protein: parseFloat(p.toFixed(1)), carbs: parseFloat(c.toFixed(1)), fats: parseFloat(f.toFixed(1)), calories: cal };
+    return {
+      protein:  parseFloat(p.toFixed(1)),
+      carbs:    parseFloat(c.toFixed(1)),
+      fats:     parseFloat(f.toFixed(1)),
+      calories: cal,
+    };
   }, [computedItems]);
 
   async function handleLog() {
     if (computedItems.length === 0) return;
-    const existing = await db.macroLogs.get(today);
-    const entry = {
-      date:     today,
-      protein:  totals.protein  + (existing?.protein  || 0),
-      carbs:    totals.carbs    + (existing?.carbs    || 0),
-      fats:     totals.fats     + (existing?.fats     || 0),
-      calories: totals.calories + (existing?.calories || 0),
+    // First commit any still-focused qty inputs so nothing is missed
+    const committedItems = selectedItems.map(item => {
+      const liveStr = qtyInputs[item.id];
+      const liveNum = liveStr !== undefined ? parseQuantity(liveStr) : NaN;
+      const effectiveQty = (!isNaN(liveNum) && liveNum >= 0) ? liveNum : item.qty;
+      return { ...item, qty: effectiveQty };
+    });
+    let p = 0, c = 0, f = 0, cal = 0;
+    committedItems.forEach(item => {
+      const ratio = item.qty / item.food.baseQty;
+      p   += item.food.p    * ratio;
+      c   += item.food.c    * ratio;
+      f   += item.food.f    * ratio;
+      cal += item.food.kcal * ratio;
+    });
+    const snap = {
+      protein:  parseFloat(p.toFixed(1)),
+      carbs:    parseFloat(c.toFixed(1)),
+      fats:     parseFloat(f.toFixed(1)),
+      calories: Math.round(cal),
     };
-    await db.macroLogs.put(entry);
-    setLoggedMacros(entry);
-    setSelectedItems([]);
+    try {
+      const existing = await db.macroLogs.get(today);
+      const entry = {
+        date:     today,
+        protein:  parseFloat((snap.protein  + (existing?.protein  || 0)).toFixed(1)),
+        carbs:    parseFloat((snap.carbs    + (existing?.carbs    || 0)).toFixed(1)),
+        fats:     parseFloat((snap.fats     + (existing?.fats     || 0)).toFixed(1)),
+        calories: Math.round(snap.calories  + (existing?.calories || 0)),
+      };
+      await db.macroLogs.put(entry);
+      setLoggedMacros(entry);
+      setSelectedItems([]);
+      setQtyInputs({});
+    } catch (err) {
+      console.error('Failed to log macros:', err);
+      alert('Failed to log macros. Please try again.');
+    }
   }
 
   const totalFoodsCount = Object.keys(FOOD_DB).length;
@@ -475,7 +548,7 @@ Replace the 0s with the numeric values in grams/kcal.`;
 
       <div className="space-y-4">
         {/* ── Calculator Card ── */}
-        <div className="glass-card rounded-2xl p-4 space-y-3">
+        <div className="glass-card rounded-2xl p-4 space-y-3 relative z-20">
 
           {/* Header */}
           <div className="flex items-center justify-between">
@@ -589,19 +662,20 @@ Replace the 0s with the numeric values in grams/kcal.`;
                       <div className="flex items-center gap-2 px-3 pb-2">
                         <div className="flex items-center gap-1.5 flex-1 bg-zinc-800/60 border border-zinc-700/60 rounded-lg px-2.5 py-1.5 focus-within:border-emerald-500/60 transition-colors">
                           <input
-                            type="number" min="0"
-                            step={item.food.unit === 'piece' || item.food.unit === 'scoop' || item.food.unit === 'serving' ? '1' : '10'}
-                            value={item.qty}
-                            onChange={(e) => updateQty(item.id, e.target.value)}
+                            type="text" inputMode="decimal"
+                            value={qtyInputs[item.id] ?? String(item.qty)}
+                            onChange={(e) => handleQtyChange(item.id, e.target.value)}
+                            onBlur={() => commitQty(item.id)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') { e.target.blur(); } }}
                             className="w-16 bg-transparent text-sm text-white font-semibold focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                           />
                           <span className="text-xs text-zinc-500">{item.food.unit}</span>
                         </div>
-                        <div className="flex gap-2 text-[11px] shrink-0">
-                          <span className="text-cyan-400 font-medium">{item.protein}p</span>
-                          <span className="text-amber-400 font-medium">{item.carbs}c</span>
-                          <span className="text-purple-400 font-medium">{item.fats}f</span>
-                          <span className="text-emerald-400 font-bold">{item.kcal}k</span>
+                        <div className="flex gap-1.5 text-[11px] shrink-0 min-w-0">
+                          <span className="text-cyan-400 font-medium truncate flex gap-0.5"><span className="opacity-70">P:</span>{formatNumber(item.protein)}</span>
+                          <span className="text-amber-400 font-medium truncate flex gap-0.5"><span className="opacity-70">C:</span>{formatNumber(item.carbs)}</span>
+                          <span className="text-purple-400 font-medium truncate flex gap-0.5"><span className="opacity-70">F:</span>{formatNumber(item.fats)}</span>
+                          <span className="text-emerald-400 font-bold truncate flex gap-0.5"><span className="opacity-70">🔥</span>{formatNumber(item.kcal)}</span>
                         </div>
                       </div>
                     </motion.div>
@@ -611,14 +685,14 @@ Replace the 0s with the numeric values in grams/kcal.`;
                 {/* Totals */}
                 <div className="grid grid-cols-4 gap-1.5 pt-0.5">
                   {[
-                    { label: 'Protein', val: totals.protein + 'g', color: 'text-cyan-400' },
-                    { label: 'Carbs',   val: totals.carbs   + 'g', color: 'text-amber-400' },
-                    { label: 'Fats',    val: totals.fats    + 'g', color: 'text-purple-400' },
-                    { label: 'kcal',    val: totals.calories,       color: 'text-emerald-400' },
+                    { label: 'PROTEIN (g)', val: formatNumber(totals.protein), color: 'text-cyan-400' },
+                    { label: 'CARBS (g)',   val: formatNumber(totals.carbs),   color: 'text-amber-400' },
+                    { label: 'FATS (g)',    val: formatNumber(totals.fats),    color: 'text-purple-400' },
+                    { label: 'KCAL',        val: formatNumber(totals.calories), color: 'text-emerald-400' },
                   ].map((t) => (
-                    <div key={t.label} className="bg-zinc-900/70 rounded-xl p-2 text-center border border-zinc-800">
-                      <p className={`text-xs font-bold ${t.color}`}>{t.val}</p>
-                      <p className="text-[9px] text-zinc-600 uppercase tracking-widest mt-0.5">{t.label}</p>
+                    <div key={t.label} className="bg-zinc-900/70 rounded-xl p-2 text-center border border-zinc-800 min-w-0 overflow-hidden">
+                      <p className={`text-xs font-bold ${t.color} truncate`}>{t.val}</p>
+                      <p className="text-[9px] text-zinc-600 uppercase tracking-widest mt-0.5 truncate">{t.label}</p>
                     </div>
                   ))}
                 </div>
@@ -646,7 +720,7 @@ Replace the 0s with the numeric values in grams/kcal.`;
               Log to Today
             </button>
             <button
-              onClick={() => setSelectedItems([])}
+              onClick={() => { setSelectedItems([]); setQtyInputs({}); }}
               disabled={selectedItems.length === 0}
               className="py-2.5 px-3 rounded-xl bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-white font-semibold text-xs active:scale-95 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
             >
@@ -676,14 +750,14 @@ Replace the 0s with the numeric values in grams/kcal.`;
               </div>
               <div className="grid grid-cols-4 gap-2 text-center">
                 {[
-                  { label: 'Protein', val: loggedMacros.protein + 'g', color: 'text-cyan-400' },
-                  { label: 'Carbs',   val: loggedMacros.carbs   + 'g', color: 'text-amber-400' },
-                  { label: 'Fats',    val: loggedMacros.fats    + 'g', color: 'text-purple-400' },
-                  { label: 'kcal',    val: loggedMacros.calories,       color: 'text-emerald-400' },
+                  { label: 'PROTEIN (g)', val: formatNumber(loggedMacros.protein), color: 'text-cyan-400' },
+                  { label: 'CARBS (g)',   val: formatNumber(loggedMacros.carbs),   color: 'text-amber-400' },
+                  { label: 'FATS (g)',    val: formatNumber(loggedMacros.fats),    color: 'text-purple-400' },
+                  { label: 'KCAL',        val: formatNumber(loggedMacros.calories), color: 'text-emerald-400' },
                 ].map((t) => (
-                  <div key={t.label} className="bg-zinc-900/50 rounded-xl p-2 border border-zinc-800">
-                    <p className={`text-xs font-bold ${t.color}`}>{t.val}</p>
-                    <p className="text-[9px] text-zinc-500 uppercase tracking-widest mt-0.5">{t.label}</p>
+                  <div key={t.label} className="bg-zinc-900/50 rounded-xl p-2 border border-zinc-800 min-w-0 overflow-hidden">
+                    <p className={`text-[11px] font-bold ${t.color} truncate`}>{t.val}</p>
+                    <p className="text-[9px] text-zinc-500 uppercase tracking-widest mt-0.5 truncate">{t.label}</p>
                   </div>
                 ))}
               </div>

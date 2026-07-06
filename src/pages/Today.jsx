@@ -104,22 +104,25 @@ export default function Today() {
 
   async function toggleHabit(habitId) {
     const key = [today, habitId];
-    const existing = await db.dailyLogs.get(key);
-
-    if (existing) {
-      await db.dailyLogs.put({
-        date: today,
-        habitId,
-        completed: !existing.completed,
-        timestamp: new Date().toISOString(),
-      });
-    } else {
-      await db.dailyLogs.add({
-        date: today,
-        habitId,
-        completed: true,
-        timestamp: new Date().toISOString(),
-      });
+    try {
+      const existing = await db.dailyLogs.get(key);
+      if (existing) {
+        await db.dailyLogs.put({
+          date: today,
+          habitId,
+          completed: !existing.completed,
+          timestamp: new Date().toISOString(),
+        });
+      } else {
+        await db.dailyLogs.add({
+          date: today,
+          habitId,
+          completed: true,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    } catch (err) {
+      console.error('Failed to toggle habit:', err);
     }
   }
 

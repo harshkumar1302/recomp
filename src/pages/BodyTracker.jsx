@@ -51,22 +51,26 @@ function LogWeightModal({ isOpen, onClose, editingEntry }) {
   async function handleSave() {
     if (!weight) return;
     const dateStr = editingEntry ? editingEntry.date : format(new Date(), 'yyyy-MM-dd');
-    const existing = await db.bodyLogs.get(dateStr);
     const entry = {
       date: dateStr,
       weight_kg: parseFloat(weight),
       waist_cm: waist ? parseFloat(waist) : null,
       height_cm: height ? parseFloat(height) : null,
     };
-    if (existing) {
-      await db.bodyLogs.update(dateStr, entry);
-    } else {
-      await db.bodyLogs.add(entry);
+    try {
+      const existing = await db.bodyLogs.get(dateStr);
+      if (existing) {
+        await db.bodyLogs.update(dateStr, entry);
+      } else {
+        await db.bodyLogs.add(entry);
+      }
+      setWeight('');
+      setWaist('');
+      setHeight('');
+      onClose();
+    } catch (err) {
+      console.error('Failed to save body log:', err);
     }
-    setWeight('');
-    setWaist('');
-    setHeight('');
-    onClose();
   }
 
   return (
@@ -181,8 +185,13 @@ export default function BodyTracker() {
 
   async function confirmDeleteEntry() {
     if (!confirmDeleteDate) return;
-    await db.bodyLogs.delete(confirmDeleteDate);
-    setConfirmDeleteDate(null);
+    try {
+      await db.bodyLogs.delete(confirmDeleteDate);
+    } catch (err) {
+      console.error('Failed to delete body log:', err);
+    } finally {
+      setConfirmDeleteDate(null);
+    }
   }
 
   const chartData = useMemo(() => {

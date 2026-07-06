@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format } from 'date-fns';
-import { Scale, TrendingDown, Target, Plus, Ruler, Edit3, Trash2 } from 'lucide-react';
+import { Scale, Target, Plus, Edit3, Trash2, Activity, ChevronRight } from 'lucide-react';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -21,6 +21,30 @@ const MILESTONES = [
   { label: '12% BF Target', weight: null },
 ];
 
+function CustomTooltip({ active, payload, label }) {
+  if (active && payload && payload.length) {
+    return (
+      <div
+        className="px-3 py-2 rounded-xl border"
+        style={{
+          background: 'rgba(24,24,27,0.9)',
+          backdropFilter: 'blur(12px)',
+          borderColor: 'rgba(255,255,255,0.1)'
+        }}
+      >
+        <p className="text-[10px] text-zinc-400 font-bold uppercase mb-1 tracking-wider">{label}</p>
+        {payload.map((entry, idx) => (
+          <p key={idx} className="text-sm font-bold flex items-center gap-1.5" style={{ color: entry.color }}>
+            <span className="w-2 h-2 rounded-full" style={{ background: entry.color }} />
+            {entry.name}: {entry.value} kg
+          </p>
+        ))}
+      </div>
+    );
+  }
+  return null;
+}
+
 function LogWeightModal({ isOpen, onClose, editingEntry }) {
   const [weight, setWeight] = useState('');
   const [waist, setWaist] = useState('');
@@ -34,15 +58,9 @@ function LogWeightModal({ isOpen, onClose, editingEntry }) {
     } else {
       setWeight('');
       setWaist('');
-      // Smart default: pull the most recent logged height
-      db.bodyLogs
-        .orderBy('date')
-        .reverse()
-        .filter((x) => !!x.height_cm)
-        .first()
-        .then((lastLog) => {
-          if (lastLog) setHeight(lastLog.height_cm.toString());
-        });
+      db.bodyLogs.orderBy('date').reverse().filter(x => !!x.height_cm).first().then((lastLog) => {
+        if (lastLog) setHeight(lastLog.height_cm.toString());
+      });
     }
   }, [editingEntry, isOpen]);
 
@@ -58,15 +76,8 @@ function LogWeightModal({ isOpen, onClose, editingEntry }) {
       height_cm: height ? parseFloat(height) : null,
     };
     try {
-      const existing = await db.bodyLogs.get(dateStr);
-      if (existing) {
-        await db.bodyLogs.update(dateStr, entry);
-      } else {
-        await db.bodyLogs.add(entry);
-      }
-      setWeight('');
-      setWaist('');
-      setHeight('');
+      if (await db.bodyLogs.get(dateStr)) await db.bodyLogs.update(dateStr, entry);
+      else await db.bodyLogs.add(entry);
       onClose();
     } catch (err) {
       console.error('Failed to save body log:', err);
@@ -75,386 +86,284 @@ function LogWeightModal({ isOpen, onClose, editingEntry }) {
 
   return (
     <motion.div
-      className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 backdrop-blur-sm"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       onClick={onClose}
     >
       <motion.div
-        className="glass-card rounded-t-3xl w-full max-w-lg p-6 space-y-5"
-        initial={{ y: '100%' }}
-        animate={{ y: 0 }}
-        exit={{ y: '100%' }}
-        transition={{ type: 'spring', damping: 30, stiffness: 400 }}
+        className="rounded-3xl w-full max-w-sm p-6 space-y-5 shadow-2xl border"
+        style={{ background: 'linear-gradient(145deg, rgba(30,30,36,0.95), rgba(18,18,22,0.95))', borderColor: 'rgba(255,255,255,0.08)' }}
+        initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="w-10 h-1 bg-zinc-600 rounded-full mx-auto" />
-        <h2 className="text-lg font-bold text-white text-glow">
-          {editingEntry ? `Edit Stats (${editingEntry.date})` : 'Log Body Stats'}
-        </h2>
-
-        <div>
-          <label className="text-xs text-zinc-400 uppercase tracking-wider mb-1 block">
-            Weight (kg) *
-          </label>
-          <input
-            type="number"
-            step="0.1"
-            value={weight}
-            onChange={(e) => setWeight(e.target.value)}
-            placeholder="e.g. 72.5"
-            className="w-full bg-zinc-800/60 border border-zinc-700 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-emerald-500 transition-colors"
-          />
+        <div className="flex items-center gap-2 pb-2 border-b border-white/5">
+          <div className="w-8 h-8 rounded-xl bg-blue-500/15 flex items-center justify-center">
+            <Scale size={14} className="text-blue-400" />
+          </div>
+          <h2 className="text-sm font-bold text-white tracking-wide">
+            {editingEntry ? `Edit Stats (${editingEntry.date})` : 'Log Body Stats'}
+          </h2>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="text-xs text-zinc-400 uppercase tracking-wider mb-1 block">
-              Waist (cm) — optional
-            </label>
+        <div className="space-y-4">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[10px] text-blue-400 font-bold uppercase tracking-wider pl-1">Weight (kg) *</label>
             <input
-              type="number"
-              step="0.1"
-              value={waist}
-              onChange={(e) => setWaist(e.target.value)}
+              type="number" step="0.1" value={weight} onChange={(e) => setWeight(e.target.value)}
+              className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
+              placeholder="e.g. 75.5" autoFocus
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider pl-1">Waist (cm)</label>
+            <input
+              type="number" step="0.1" value={waist} onChange={(e) => setWaist(e.target.value)}
+              className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-zinc-500 transition-colors"
               placeholder="e.g. 82.0"
-              className="w-full bg-zinc-800/60 border border-zinc-700 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-emerald-500 transition-colors"
             />
           </div>
-
-          <div>
-            <label className="text-xs text-zinc-400 uppercase tracking-wider mb-1 block">
-              Height (cm) — optional
-            </label>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider pl-1">Height (cm)</label>
             <input
-              type="number"
-              step="0.1"
-              value={height}
-              onChange={(e) => setHeight(e.target.value)}
-              placeholder="e.g. 175.0"
-              className="w-full bg-zinc-800/60 border border-zinc-700 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-emerald-500 transition-colors"
+              type="number" step="1" value={height} onChange={(e) => setHeight(e.target.value)}
+              className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-zinc-500 transition-colors"
+              placeholder="e.g. 175"
             />
           </div>
         </div>
 
-        <button
-          onClick={handleSave}
-          disabled={!weight}
-          className="w-full py-3.5 rounded-2xl font-semibold text-sm transition-all disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.98] cursor-pointer"
-          style={{
-            background: 'linear-gradient(135deg, #10b981, #059669)',
-            color: 'white',
-          }}
-        >
-          Save Entry
-        </button>
+        <div className="flex gap-3 pt-2">
+          <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-zinc-800 text-xs font-bold text-zinc-400 hover:text-white transition-colors">Cancel</button>
+          <button onClick={handleSave} disabled={!weight} className="flex-1 py-3 rounded-xl bg-blue-500 text-xs font-bold text-white shadow-[0_0_15px_rgba(59,130,246,0.4)] disabled:opacity-50 transition-all active:scale-95 cursor-pointer">Save Log</button>
+        </div>
       </motion.div>
     </motion.div>
   );
 }
 
-const CustomTooltip = ({ active, payload, label }) => {
-  if (active && payload && payload.length) {
+export default function BodyTracker() {
+  const allLogs = useLiveQuery(() => db.bodyLogs.orderBy('date').reverse().toArray(), []);
+  
+  const [showModal, setShowModal] = useState(false);
+  const [editingEntry, setEditingEntry] = useState(null);
+
+  const chartData = useMemo(() => {
+    if (!allLogs) return [];
+    return [...allLogs].reverse().map(l => ({ ...l, displayDate: format(new Date(l.date + 'T00:00:00'), 'MMM d') }));
+  }, [allLogs]);
+
+  const latestLog = allLogs?.[0];
+
+  const derivedStats = useMemo(() => {
+    if (!latestLog || !latestLog.height_cm) return null;
+    const hMeters = latestLog.height_cm / 100;
+    const bmi = (latestLog.weight_kg / (hMeters * hMeters)).toFixed(1);
+    let bf = null;
+    // RFM Formula for men
+    if (latestLog.waist_cm) bf = (64 - (20 * (latestLog.height_cm / latestLog.waist_cm))).toFixed(1);
+    return { bmi, bf };
+  }, [latestLog]);
+
+  async function handleDelete(date) {
+    if (window.confirm('Delete this entry?')) await db.bodyLogs.delete(date);
+  }
+
+  function openEdit(entry) {
+    setEditingEntry(entry);
+    setShowModal(true);
+  }
+
+  function openNew() {
+    setEditingEntry(null);
+    setShowModal(true);
+  }
+
+  if (!allLogs) {
     return (
-      <div className="glass-card rounded-xl px-3 py-2 text-xs">
-        <p className="text-zinc-400">{label}</p>
-        <p className="text-cyan-400 font-bold">{payload[0].value} kg</p>
-        {payload[1] && payload[1].value && (
-          <p className="text-purple-400 font-bold">{payload[1].value} cm</p>
-        )}
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="w-10 h-10 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
       </div>
     );
   }
-  return null;
-};
-
-export default function BodyTracker() {
-  const [showModal, setShowModal] = useState(false);
-  const [editingEntry, setEditingEntry] = useState(null);
-  const [confirmDeleteDate, setConfirmDeleteDate] = useState(null);
-
-  const bodyLogs = useLiveQuery(
-    () => db.bodyLogs.orderBy('date').toArray(),
-    []
-  );
-
-  async function deleteEntry(date) {
-    setConfirmDeleteDate(date);
-  }
-
-  async function confirmDeleteEntry() {
-    if (!confirmDeleteDate) return;
-    try {
-      await db.bodyLogs.delete(confirmDeleteDate);
-    } catch (err) {
-      console.error('Failed to delete body log:', err);
-    } finally {
-      setConfirmDeleteDate(null);
-    }
-  }
-
-  const chartData = useMemo(() => {
-    if (!bodyLogs || bodyLogs.length === 0) return [];
-    return bodyLogs.map((entry) => ({
-      date: format(new Date(entry.date + 'T00:00:00'), 'MMM d'),
-      weight: entry.weight_kg,
-      waist: entry.waist_cm,
-    }));
-  }, [bodyLogs]);
-
-  const stats = useMemo(() => {
-    if (!bodyLogs || bodyLogs.length === 0)
-      return { current: null, start: null, change: null, bmi: null };
-    const sorted = [...bodyLogs].sort((a, b) => a.date.localeCompare(b.date));
-    const start = sorted[0].weight_kg;
-    const current = sorted[sorted.length - 1].weight_kg;
-    // Find the most recent height entry
-    const withHeight = sorted.filter((e) => e.height_cm);
-    const heightCm = withHeight.length > 0 ? withHeight[withHeight.length - 1].height_cm : null;
-    const bmi = heightCm ? (current / ((heightCm / 100) ** 2)).toFixed(1) : null;
-    return {
-      current,
-      start,
-      change: (current - start).toFixed(1),
-      bmi,
-      heightCm,
-    };
-  }, [bodyLogs]);
-
-  const bmiCategory = useMemo(() => {
-    if (!stats.bmi) return null;
-    const v = parseFloat(stats.bmi);
-    if (v < 18.5) return { label: 'Underweight', color: 'text-yellow-400' };
-    if (v < 25) return { label: 'Normal', color: 'text-emerald-400' };
-    if (v < 30) return { label: 'Overweight', color: 'text-orange-400' };
-    return { label: 'Obese', color: 'text-red-400' };
-  }, [stats.bmi]);
 
   return (
-    <div className="max-w-lg mx-auto pb-4 space-y-5">
-      <motion.div
-        className="flex items-center justify-between"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-      >
+    <div className="max-w-7xl mx-auto px-1 space-y-6">
+      
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold bg-gradient-to-r from-white to-zinc-400 bg-clip-text text-transparent">
+          <h1 className="text-2xl font-black bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">
             Body Tracker
           </h1>
-          <p className="text-zinc-500 text-sm mt-1">Weight, height & measurements</p>
+          <p className="text-zinc-500 text-xs mt-1 font-medium">Log and visualize your recomp</p>
         </div>
         <button
-          onClick={() => {
-            setEditingEntry(null);
-            setShowModal(true);
-          }}
-          className="flex items-center gap-1.5 px-4 py-2.5 rounded-2xl text-sm font-semibold transition-all active:scale-95 cursor-pointer"
-          style={{
-            background: 'linear-gradient(135deg, #10b981, #059669)',
-            color: 'white',
-          }}
+          onClick={openNew}
+          className="flex items-center gap-2 bg-blue-500 hover:bg-blue-400 text-white px-4 py-2.5 rounded-2xl text-xs font-bold shadow-[0_0_15px_rgba(59,130,246,0.3)] transition-all active:scale-95 cursor-pointer"
         >
           <Plus size={16} />
-          Log
+          <span>Log Stats</span>
         </button>
-      </motion.div>
+      </div>
 
-      {/* Stats Cards */}
-      {stats.current && (
-        <motion.div
-          className={`grid ${stats.bmi ? 'grid-cols-2 md:grid-cols-4' : 'grid-cols-3'} gap-3`}
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-        >
-          <div className="glass-card rounded-2xl p-4 text-center">
-            <Scale size={16} className="text-cyan-400 mx-auto mb-1" />
-            <p className="text-xl font-bold text-white">{stats.current}</p>
-            <p className="text-[10px] text-zinc-500 uppercase tracking-widest">
-              Current kg
-            </p>
-          </div>
-          <div className="glass-card rounded-2xl p-4 text-center">
-            <Target size={16} className="text-purple-400 mx-auto mb-1" />
-            <p className="text-xl font-bold text-white">{stats.start}</p>
-            <p className="text-[10px] text-zinc-500 uppercase tracking-widest">
-              Starting kg
-            </p>
-          </div>
-          <div className="glass-card rounded-2xl p-4 text-center">
-            <TrendingDown size={16} className={`mx-auto mb-1 ${
-              parseFloat(stats.change) <= 0 ? 'text-emerald-400' : 'text-red-400'
-            }`} />
-            <p className={`text-xl font-bold ${
-              parseFloat(stats.change) <= 0 ? 'text-emerald-400' : 'text-red-400'
-            }`}>
-              {parseFloat(stats.change) > 0 ? '+' : ''}{stats.change}
-            </p>
-            <p className="text-[10px] text-zinc-500 uppercase tracking-widest">
-              Change kg
-            </p>
-          </div>
-          {stats.bmi && bmiCategory && (
-            <div className="glass-card rounded-2xl p-4 text-center">
-              <Ruler size={16} className="text-amber-400 mx-auto mb-1" />
-              <p className={`text-xl font-bold ${bmiCategory.color}`}>{stats.bmi}</p>
-              <p className="text-[10px] text-zinc-500 uppercase tracking-widest">
-                BMI · {bmiCategory.label}
-              </p>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        
+        {/* ── Left Column: Current Stats & Milestones ── */}
+        <div className="lg:col-span-4 space-y-6">
+          
+          {/* Hero Stat Card */}
+          <motion.div
+            initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}
+            className="rounded-3xl p-6 border relative overflow-hidden"
+            style={{ background: 'linear-gradient(145deg, rgba(30,30,36,0.8), rgba(18,18,22,0.9))', borderColor: 'rgba(255,255,255,0.06)' }}
+          >
+            <div className="absolute -right-10 -top-10 w-40 h-40 bg-blue-500/20 blur-3xl rounded-full pointer-events-none" />
+            
+            <p className="text-[10px] uppercase tracking-widest font-bold text-blue-400 mb-2 relative z-10">Current Status</p>
+            {latestLog ? (
+              <div className="relative z-10 space-y-4">
+                <div className="flex items-baseline gap-2">
+                  <h2 className="text-5xl font-black text-white">{latestLog.weight_kg}</h2>
+                  <span className="text-zinc-500 font-bold">kg</span>
+                </div>
+                
+                {(derivedStats?.bf || derivedStats?.bmi) && (
+                  <div className="flex gap-2 pt-2 border-t border-white/5">
+                    {derivedStats.bf && (
+                      <div className="flex-1 bg-black/30 rounded-xl p-3 border border-white/5">
+                        <p className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold mb-1">Est. Body Fat</p>
+                        <p className="text-lg font-bold text-white">{derivedStats.bf}%</p>
+                      </div>
+                    )}
+                    {derivedStats.bmi && (
+                      <div className="flex-1 bg-black/30 rounded-xl p-3 border border-white/5">
+                        <p className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold mb-1">BMI</p>
+                        <p className="text-lg font-bold text-white">{derivedStats.bmi}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+                <p className="text-[10px] text-zinc-600 font-medium">Last logged: {format(new Date(latestLog.date + 'T00:00:00'), 'MMM d, yyyy')}</p>
+              </div>
+            ) : (
+              <p className="text-sm text-zinc-500">No logs yet. Log your weight to see stats.</p>
+            )}
+          </motion.div>
+
+          {/* Milestones Card */}
+          <motion.div
+            initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.1 }}
+            className="rounded-3xl p-5 border"
+            style={{ background: 'rgba(24,24,27,0.6)', backdropFilter: 'blur(16px)', borderColor: 'rgba(255,255,255,0.05)' }}
+          >
+            <div className="flex items-center gap-2 mb-4 pb-3 border-b border-white/5">
+              <div className="w-7 h-7 rounded-lg bg-indigo-500/15 flex items-center justify-center">
+                <Target size={14} className="text-indigo-400" />
+              </div>
+              <h3 className="text-xs font-bold text-white uppercase tracking-widest">Milestones</h3>
             </div>
-          )}
-        </motion.div>
-      )}
+            <div className="space-y-3">
+              {MILESTONES.map((m, i) => (
+                <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-black/20 border border-white/5">
+                  <span className="text-sm text-zinc-300 font-medium">{m.label}</span>
+                  <span className="text-xs font-bold text-zinc-600 bg-zinc-900 px-2 py-1 rounded-md">Pending</span>
+                </div>
+              ))}
+            </div>
+          </motion.div>
 
-      {/* Weight Chart */}
-      <motion.div
-        className="glass-card rounded-2xl p-5"
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-      >
-        <h3 className="text-sm font-semibold text-zinc-300 mb-4 flex items-center gap-2">
-          <Scale size={16} className="text-cyan-400" />
-          Weight Trend
-        </h3>
-        {chartData.length > 1 ? (
-          <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={chartData}>
-              <defs>
-                <linearGradient id="weightGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#22d3ee" stopOpacity={0.3} />
-                  <stop offset="100%" stopColor="#22d3ee" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-              <XAxis
-                dataKey="date"
-                tick={{ fill: '#71717a', fontSize: 10 }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <YAxis
-                tick={{ fill: '#71717a', fontSize: 10 }}
-                axisLine={false}
-                tickLine={false}
-                width={35}
-                domain={['dataMin - 1', 'dataMax + 1']}
-              />
-              <Tooltip content={<CustomTooltip />} />
-              <Area
-                type="monotone"
-                dataKey="weight"
-                stroke="#22d3ee"
-                fill="url(#weightGrad)"
-                strokeWidth={2}
-                dot={{ r: 3, fill: '#22d3ee' }}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        ) : (
-          <p className="text-zinc-600 text-sm text-center py-10">
-            {chartData.length === 1
-              ? 'Log one more entry to see your trend'
-              : 'Log your weight to start tracking'}
-          </p>
-        )}
-      </motion.div>
+        </div>
 
-      {/* Recent Entries */}
-      {bodyLogs && bodyLogs.length > 0 && (
-        <motion.div
-          className="glass-card rounded-2xl p-5"
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-        >
-          <h3 className="text-sm font-semibold text-zinc-300 mb-4">
-            Recent Entries
-          </h3>
-          <div className="space-y-2">
-            {[...bodyLogs]
-              .sort((a, b) => b.date.localeCompare(a.date))
-              .slice(0, 7)
-              .map((entry) => (
-                <div
-                  key={entry.date}
-                  className="flex items-center justify-between py-2.5 px-3 rounded-xl bg-zinc-800/40 group hover:bg-zinc-805 transition-colors"
-                >
-                  <span className="text-sm text-zinc-400">
-                    {format(new Date(entry.date + 'T00:00:00'), 'EEE, MMM d')}
-                  </span>
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm font-semibold text-white">
-                        {entry.weight_kg} kg
-                      </span>
-                      {entry.waist_cm && (
-                        <span className="text-xs text-purple-400 flex items-center gap-1">
-                          <Ruler size={12} />
-                          {entry.waist_cm} cm
-                        </span>
-                      )}
+        {/* ── Right Column: Chart & History ── */}
+        <div className="lg:col-span-8 space-y-6">
+          
+          {/* Main Chart */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
+            className="rounded-3xl p-6 border h-[350px] flex flex-col"
+            style={{ background: 'rgba(24,24,27,0.6)', backdropFilter: 'blur(16px)', borderColor: 'rgba(255,255,255,0.05)' }}
+          >
+            <div className="flex items-center gap-2 mb-6">
+              <div className="w-8 h-8 rounded-xl bg-blue-500/10 flex items-center justify-center">
+                <Activity size={14} className="text-blue-400" />
+              </div>
+              <h3 className="text-sm font-bold text-white">Trend Analysis</h3>
+            </div>
+            <div className="flex-1 w-full">
+              {chartData.length > 1 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={chartData} margin={{ top: 10, right: 0, left: -25, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="colorWeightMain" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.6} />
+                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                    <XAxis dataKey="displayDate" stroke="rgba(255,255,255,0.3)" fontSize={10} axisLine={false} tickLine={false} tickMargin={10} />
+                    <YAxis stroke="rgba(255,255,255,0.3)" fontSize={10} axisLine={false} tickLine={false} domain={['dataMin - 1', 'dataMax + 1']} tickFormatter={(val) => val.toFixed(1)} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Area
+                      type="monotone" dataKey="weight_kg" name="Weight" stroke="#3b82f6" strokeWidth={4}
+                      fill="url(#colorWeightMain)" activeDot={{ r: 6, fill: '#3b82f6', stroke: '#fff', strokeWidth: 2 }}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="w-full h-full flex items-center justify-center border border-dashed border-zinc-700/50 rounded-2xl bg-black/20 text-zinc-500 text-xs">
+                  Need at least 2 entries to chart trends.
+                </div>
+              )}
+            </div>
+          </motion.div>
+
+          {/* History List */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+            className="rounded-3xl border overflow-hidden"
+            style={{ background: 'rgba(24,24,27,0.6)', backdropFilter: 'blur(16px)', borderColor: 'rgba(255,255,255,0.05)' }}
+          >
+            <div className="px-5 py-4 border-b border-white/5 bg-black/20">
+              <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-widest">History Log</h3>
+            </div>
+            <div className="divide-y divide-white/5 max-h-[300px] overflow-y-auto custom-scrollbar">
+              {allLogs.length === 0 ? (
+                <p className="p-6 text-center text-xs text-zinc-500">No logs yet.</p>
+              ) : (
+                allLogs.map((log) => (
+                  <div key={log.date} className="flex items-center justify-between px-5 py-3.5 hover:bg-white/[0.02] transition-colors group">
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center border border-blue-500/20">
+                        <Scale size={14} className="text-blue-400" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-white">{log.weight_kg} kg</p>
+                        <p className="text-[10px] text-zinc-500">{format(new Date(log.date + 'T00:00:00'), 'MMM d, yyyy')}</p>
+                      </div>
                     </div>
-                    {/* Actions */}
-                    <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button
-                        onClick={() => {
-                          setEditingEntry(entry);
-                          setShowModal(true);
-                        }}
-                        className="p-1.5 rounded-lg hover:bg-zinc-700/50 text-zinc-400 hover:text-white transition-colors cursor-pointer"
-                        title="Edit Entry"
-                      >
-                        <Edit3 size={13} />
+                    
+                    <div className="flex items-center gap-2 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => openEdit(log)} className="w-8 h-8 rounded-lg bg-zinc-800/80 flex items-center justify-center text-zinc-400 hover:text-white border border-white/5 cursor-pointer">
+                        <Edit3 size={14} />
                       </button>
-                      <button
-                        onClick={() => deleteEntry(entry.date)}
-                        className="p-1.5 rounded-lg hover:bg-red-500/10 text-red-400/60 hover:text-red-400 transition-colors cursor-pointer"
-                        title="Delete Entry"
-                      >
-                        <Trash2 size={13} />
+                      <button onClick={() => handleDelete(log.date)} className="w-8 h-8 rounded-lg bg-red-500/10 flex items-center justify-center text-red-400 hover:text-red-300 hover:bg-red-500/20 border border-red-500/20 cursor-pointer">
+                        <Trash2 size={14} />
                       </button>
                     </div>
                   </div>
-                </div>
-              ))}
-          </div>
-        </motion.div>
-      )}
-
-      {/* Confirm Delete Modal */}
-      <AnimatePresence>
-        {confirmDeleteDate && (
-          <motion.div
-            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-sm"
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            onClick={() => setConfirmDeleteDate(null)}
-          >
-            <motion.div
-              className="glass-card rounded-2xl p-5 mx-4 max-w-xs w-full border border-zinc-700 shadow-2xl"
-              initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <p className="text-sm font-semibold text-white mb-1">Delete Entry?</p>
-              <p className="text-xs text-zinc-400 mb-4">Remove the body log entry for <span className="text-white font-medium">{confirmDeleteDate}</span>?</p>
-              <div className="flex gap-2">
-                <button onClick={() => setConfirmDeleteDate(null)} className="flex-1 py-2 rounded-xl bg-zinc-800 border border-zinc-700 text-zinc-300 text-xs font-semibold cursor-pointer">Cancel</button>
-                <button onClick={confirmDeleteEntry} className="flex-1 py-2 rounded-xl bg-red-500/20 border border-red-500/30 text-red-400 text-xs font-semibold cursor-pointer">Delete</button>
-              </div>
-            </motion.div>
+                ))
+              )}
+            </div>
           </motion.div>
-        )}
-      </AnimatePresence>
+
+        </div>
+      </div>
 
       <AnimatePresence>
         {showModal && (
           <LogWeightModal
             isOpen={showModal}
-            onClose={() => {
-              setShowModal(false);
-              setEditingEntry(null);
-            }}
+            onClose={() => setShowModal(false)}
             editingEntry={editingEntry}
           />
         )}

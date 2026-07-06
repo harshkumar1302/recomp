@@ -2,7 +2,11 @@ import { useState, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format } from 'date-fns';
-import { Flame, ChevronDown, ChevronUp, Sparkles, Calendar, Menu, ClipboardList, X } from 'lucide-react';
+import {
+  Flame, ChevronDown, ChevronUp, Sparkles,
+  Calendar, Menu, ClipboardList, X, Zap,
+  Droplets, Sun, Moon, Sunset,
+} from 'lucide-react';
 import CalendarModal from '../components/CalendarModal';
 import NonRegularDrawer from '../components/NonRegularDrawer';
 import MacroCalculator from '../components/MacroCalculator';
@@ -18,25 +22,27 @@ import HabitCard from '../components/HabitCard';
 
 const CHRONOLOGICAL_SLOTS = ['morning', 'afternoon', 'evening', 'night'];
 
+const SLOT_META = {
+  morning:   { label: 'Morning',   emoji: '🌅', Icon: Sun,    gradient: 'from-amber-500/15 to-transparent',    accent: '#f59e0b' },
+  afternoon: { label: 'Afternoon', emoji: '☀️', Icon: Sunset, gradient: 'from-orange-500/10 to-transparent',   accent: '#f97316' },
+  evening:   { label: 'Evening',   emoji: '🌆', Icon: Sunset, gradient: 'from-violet-500/10 to-transparent',   accent: '#8b5cf6' },
+  night:     { label: 'Night',     emoji: '🌙', Icon: Moon,   gradient: 'from-indigo-500/10 to-transparent',   accent: '#6366f1' },
+};
+
 export default function Today() {
-  const today = getToday();
+  const today     = getToday();
   const dayOfWeek = getDayOfWeek();
 
-  const [activeTracker, setActiveTracker] = useState('both');
-  const [collapsedSlots, setCollapsedSlots] = useState({});
-  const [showCalendarModal, setShowCalendarModal] = useState(false);
-  const [showLeftDrawer, setShowLeftDrawer] = useState(false);
-  const [showRightDrawer, setShowRightDrawer] = useState(false);
+  const [activeTracker,    setActiveTracker]    = useState('both');
+  const [collapsedSlots,   setCollapsedSlots]   = useState({});
+  const [showCalendarModal,setShowCalendarModal] = useState(false);
+  const [showLeftDrawer,   setShowLeftDrawer]   = useState(false);
+  const [showRightDrawer,  setShowRightDrawer]  = useState(false);
 
-  // Load habits and daily logs
   const allHabits = useLiveQuery(() => db.habits.toArray(), []);
-  const logs = useLiveQuery(
-    () => db.dailyLogs.where('date').equals(today).toArray(),
-    [today]
-  );
-  const allLogs = useLiveQuery(() => db.dailyLogs.toArray(), []);
+  const logs      = useLiveQuery(() => db.dailyLogs.where('date').equals(today).toArray(), [today]);
+  const allLogs   = useLiveQuery(() => db.dailyLogs.toArray(), []);
 
-  // Filter for only daily items scheduled for today
   const todaysDailyHabits = useMemo(() => {
     if (!allHabits) return [];
     return allHabits.filter(
@@ -46,80 +52,61 @@ export default function Today() {
 
   const completionMap = useMemo(() => {
     const map = {};
-    if (logs) {
-      logs.forEach((l) => {
-        map[l.habitId] = l.completed;
-      });
-    }
+    if (logs) logs.forEach((l) => { map[l.habitId] = l.completed; });
     return map;
   }, [logs]);
 
-  // Split into Fitness vs Wellness checklists
-  const fitnessHabits = useMemo(() => {
-    return todaysDailyHabits.filter((h) => h.type === 'fitness');
-  }, [todaysDailyHabits]);
+  const fitnessHabits  = useMemo(() => todaysDailyHabits.filter((h) => h.type === 'fitness'),  [todaysDailyHabits]);
+  const wellnessHabits = useMemo(() => todaysDailyHabits.filter((h) => h.type === 'wellness'), [todaysDailyHabits]);
 
-  const wellnessHabits = useMemo(() => {
-    return todaysDailyHabits.filter((h) => h.type === 'wellness');
-  }, [todaysDailyHabits]);
-
-  // Fitness stats
-  const fitnessTotal = fitnessHabits.length;
+  const fitnessTotal     = fitnessHabits.length;
   const fitnessCompleted = fitnessHabits.filter((h) => completionMap[h.id]).length;
-  const fitnessProgress = fitnessTotal > 0 ? (fitnessCompleted / fitnessTotal) * 100 : 0;
+  const fitnessProgress  = fitnessTotal > 0 ? (fitnessCompleted / fitnessTotal) * 100 : 0;
 
-  // Wellness stats
-  const wellnessTotal = wellnessHabits.length;
+  const wellnessTotal     = wellnessHabits.length;
   const wellnessCompleted = wellnessHabits.filter((h) => completionMap[h.id]).length;
-  const wellnessProgress = wellnessTotal > 0 ? (wellnessCompleted / wellnessTotal) * 100 : 0;
+  const wellnessProgress  = wellnessTotal > 0 ? (wellnessCompleted / wellnessTotal) * 100 : 0;
 
-  // Streak calculations
+  const overallCompleted = fitnessCompleted + wellnessCompleted;
+  const overallTotal     = fitnessTotal + wellnessTotal;
+  const overallProgress  = overallTotal > 0 ? (overallCompleted / overallTotal) * 100 : 0;
+
   const topStreak = useMemo(() => {
     if (!allLogs || !todaysDailyHabits || todaysDailyHabits.length === 0) return 0;
-    let maxStreak = 0;
+    let max = 0;
     todaysDailyHabits.forEach((habit) => {
-      const habitLogs = allLogs.filter((l) => l.habitId === habit.id);
-      const s = calculateStreak(habitLogs);
-      if (s > maxStreak) maxStreak = s;
+      const s = calculateStreak(allLogs.filter((l) => l.habitId === habit.id));
+      if (s > max) max = s;
     });
-    return maxStreak;
+    return max;
   }, [allLogs, todaysDailyHabits]);
 
-  // Group habits by slot, sorted strictly chronologically
   const groupedHabits = useMemo(() => {
-    const grouped = {
-      morning: { fitness: [], wellness: [] },
-      afternoon: { fitness: [], wellness: [] },
-      evening: { fitness: [], wellness: [] },
-      night: { fitness: [], wellness: [] },
-    };
-
+    const g = { morning: { fitness: [], wellness: [] }, afternoon: { fitness: [], wellness: [] }, evening: { fitness: [], wellness: [] }, night: { fitness: [], wellness: [] } };
     CHRONOLOGICAL_SLOTS.forEach((slot) => {
-      grouped[slot].fitness = fitnessHabits.filter((h) => h.timeOfDay === slot);
-      grouped[slot].wellness = wellnessHabits.filter((h) => h.timeOfDay === slot);
+      g[slot].fitness  = fitnessHabits.filter((h)  => h.timeOfDay === slot);
+      g[slot].wellness = wellnessHabits.filter((h) => h.timeOfDay === slot);
     });
-
-    return grouped;
+    return g;
   }, [fitnessHabits, wellnessHabits]);
+
+  const greeting = useMemo(() => {
+    const h = new Date().getHours();
+    if (h < 5)  return { text: 'Good Night',      sub: 'Rest well, champ' };
+    if (h < 12) return { text: 'Good Morning',    sub: 'Let\'s crush it today 💥' };
+    if (h < 17) return { text: 'Good Afternoon',  sub: 'Keep the momentum 🚀' };
+    if (h < 21) return { text: 'Good Evening',    sub: 'Almost there, stay strong 🌟' };
+    return             { text: 'Good Night',      sub: 'Wind down & recover 🌙' };
+  }, []);
 
   async function toggleHabit(habitId) {
     const key = [today, habitId];
     try {
       const existing = await db.dailyLogs.get(key);
       if (existing) {
-        await db.dailyLogs.put({
-          date: today,
-          habitId,
-          completed: !existing.completed,
-          timestamp: new Date().toISOString(),
-        });
+        await db.dailyLogs.put({ date: today, habitId, completed: !existing.completed, timestamp: new Date().toISOString() });
       } else {
-        await db.dailyLogs.add({
-          date: today,
-          habitId,
-          completed: true,
-          timestamp: new Date().toISOString(),
-        });
+        await db.dailyLogs.add({ date: today, habitId, completed: true, timestamp: new Date().toISOString() });
       }
     } catch (err) {
       console.error('Failed to toggle habit:', err);
@@ -130,257 +117,454 @@ export default function Today() {
     setCollapsedSlots((prev) => ({ ...prev, [slot]: !prev[slot] }));
   }
 
-  const greeting = useMemo(() => {
-    const hour = new Date().getHours();
-    if (hour < 12) return 'Good Morning';
-    if (hour < 17) return 'Good Afternoon';
-    if (hour < 20) return 'Good Evening';
-    return 'Good Night';
-  }, []);
-
   if (!allHabits || !logs) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="w-8 h-8 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
+      <div className="flex items-center justify-center min-h-[80vh]">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
+          <p className="text-zinc-600 text-xs animate-pulse">Loading your day…</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-1">
-      {/* 3-Column Cockpit Container */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        
-        {/* LEFT COLUMN: Treatment Queue Sidebar (Desktop-only, Slide-out on Mobile) */}
-        <div className="hidden lg:block lg:col-span-3 space-y-4">
-          <div className="glass-card rounded-3xl p-5 border border-zinc-800/80 shadow-lg">
-            <div className="flex items-center gap-2 pb-3 border-b border-zinc-800 mb-4">
-              <span className="text-lg">🔬</span>
-              <h2 className="text-xs font-bold text-white uppercase tracking-widest">
-                Treatment Queue
-              </h2>
+    <div className="max-w-7xl mx-auto">
+      {/* ═══════════════════════════════════════════════════════════
+          3-COLUMN COCKPIT LAYOUT
+      ═══════════════════════════════════════════════════════════ */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+
+        {/* ─────────────────────────────────────────────────────────
+            LEFT COLUMN — Treatment Queue (Desktop sidebar)
+        ───────────────────────────────────────────────────────── */}
+        <div className="hidden lg:block lg:col-span-3">
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.1 }}
+            className="sticky top-6 space-y-4"
+          >
+            {/* Queue card */}
+            <div
+              className="rounded-3xl p-5 border border-zinc-800/60"
+              style={{ background: 'linear-gradient(160deg, rgba(30,30,35,0.9), rgba(18,18,22,0.8))', backdropFilter: 'blur(16px)' }}
+            >
+              <div className="flex items-center gap-2.5 mb-4 pb-3 border-b border-white/5">
+                <div className="w-8 h-8 rounded-xl bg-purple-500/15 flex items-center justify-center text-sm">🔬</div>
+                <div>
+                  <p className="text-xs font-bold text-white uppercase tracking-widest">Treatment Queue</p>
+                  <p className="text-[10px] text-zinc-600 mt-0.5">Gap & non-regular tasks</p>
+                </div>
+              </div>
+              <NonRegularSidebar toggleHabit={toggleHabit} completionMap={completionMap} />
             </div>
-            <NonRegularSidebar toggleHabit={toggleHabit} completionMap={completionMap} />
-          </div>
+
+            {/* Today's date card */}
+            <div
+              className="rounded-3xl p-4 border border-zinc-800/40"
+              style={{ background: 'rgba(18,18,22,0.7)', backdropFilter: 'blur(16px)' }}
+            >
+              <p className="text-[10px] text-zinc-600 uppercase tracking-widest font-bold mb-1">Today</p>
+              <p className="text-sm font-bold text-zinc-200">{format(new Date(), 'EEEE, MMMM d')}</p>
+              {topStreak > 0 && (
+                <div className="flex items-center gap-1.5 mt-2 px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20 w-fit">
+                  <Flame size={12} className="text-amber-400" />
+                  <span className="text-[11px] font-bold text-amber-400">{topStreak} day streak</span>
+                </div>
+              )}
+            </div>
+          </motion.div>
         </div>
 
-        {/* CENTER COLUMN: Main Checklist & Progress Rings */}
-        <div className="lg:col-span-6 col-span-1 space-y-6">
-          
-          {/* Header row with drawer buttons for mobile */}
-          <div className="flex items-center justify-between">
-            {/* Mobile Left Drawer Button */}
+        {/* ─────────────────────────────────────────────────────────
+            CENTER COLUMN — Main Checklist
+        ───────────────────────────────────────────────────────── */}
+        <div className="lg:col-span-6 col-span-1 space-y-5">
+
+          {/* ── Mobile Top Bar ── */}
+          <div className="flex items-center justify-between lg:hidden">
             <button
               onClick={() => setShowLeftDrawer(true)}
-              className="lg:hidden w-10 h-10 rounded-xl bg-zinc-800/60 border border-zinc-700/50 flex items-center justify-center text-zinc-400 hover:text-white transition-all active:scale-95 cursor-pointer"
-              title="Treatment Queue"
+              className="w-10 h-10 rounded-2xl flex items-center justify-center text-zinc-400 hover:text-white transition-all active:scale-90 cursor-pointer"
+              style={{ background: 'rgba(39,39,42,0.7)', border: '1px solid rgba(255,255,255,0.07)' }}
             >
-              <Menu size={18} />
+              <Menu size={17} />
             </button>
 
-            {/* Header Title */}
-            <div className="text-center flex-1">
-              <p className="text-zinc-500 text-xs">
-                {format(new Date(), 'EEEE, MMMM d')}
-              </p>
-              <h1 className="text-xl font-bold bg-gradient-to-r from-white to-zinc-400 bg-clip-text text-transparent mt-0.5">
-                {greeting} ✨
+            <div className="text-center">
+              <p className="text-zinc-600 text-[11px] font-medium">{format(new Date(), 'EEEE, MMM d')}</p>
+              <h1 className="text-lg font-black bg-gradient-to-r from-white via-zinc-200 to-zinc-500 bg-clip-text text-transparent leading-tight">
+                {greeting.text} ✨
               </h1>
             </div>
 
-            <div className="flex items-center gap-2">
-              {/* Calendar Toggle */}
+            <div className="flex items-center gap-1.5">
               <button
                 onClick={() => setShowCalendarModal(true)}
-                className="w-10 h-10 rounded-xl bg-zinc-800/60 border border-zinc-700/50 flex items-center justify-center text-zinc-400 hover:text-white transition-colors active:scale-95 cursor-pointer"
-                title="View Calendar History"
+                className="w-10 h-10 rounded-2xl flex items-center justify-center text-zinc-400 hover:text-white transition-all active:scale-90 cursor-pointer"
+                style={{ background: 'rgba(39,39,42,0.7)', border: '1px solid rgba(255,255,255,0.07)' }}
               >
-                <Calendar size={18} />
+                <Calendar size={17} />
               </button>
-
-              {/* Mobile Right Drawer Button */}
               <button
                 onClick={() => setShowRightDrawer(true)}
-                className="lg:hidden w-10 h-10 rounded-xl bg-zinc-800/60 border border-zinc-700/50 flex items-center justify-center text-zinc-400 hover:text-white transition-all active:scale-95 cursor-pointer"
-                title="Macro Calculator"
+                className="w-10 h-10 rounded-2xl flex items-center justify-center text-zinc-400 hover:text-white transition-all active:scale-90 cursor-pointer"
+                style={{ background: 'rgba(39,39,42,0.7)', border: '1px solid rgba(255,255,255,0.07)' }}
               >
-                <ClipboardList size={18} />
+                <ClipboardList size={17} />
               </button>
             </div>
           </div>
 
-          {/* Double Completion Rings Card */}
-          <motion.div
-            className="glass-card rounded-3xl p-5 flex flex-col md:flex-row items-center justify-around gap-6"
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-          >
-            {/* Fitness Ring */}
-            <div 
-              className={`flex items-center gap-4 cursor-pointer transition-opacity ${activeTracker === 'wellness' ? 'opacity-40 grayscale' : 'opacity-100'}`}
-              onClick={() => setActiveTracker(prev => prev === 'fitness' ? 'both' : 'fitness')}
-            >
-              <ProgressRing progress={fitnessProgress} size={90} strokeWidth={6} ringColor="#f43f5e" />
-              <div>
-                <p className="text-[10px] text-rose-500 uppercase font-bold tracking-wider">Fitness Tracker</p>
-                <p className="text-lg font-bold text-white mt-0.5">
-                  {fitnessCompleted} <span className="text-zinc-600 font-medium">/ {fitnessTotal}</span>
-                </p>
-              </div>
+          {/* ── Desktop Header ── */}
+          <div className="hidden lg:flex items-center justify-between">
+            <div>
+              <p className="text-zinc-600 text-xs">{format(new Date(), 'EEEE, MMMM d, yyyy')}</p>
+              <h1 className="text-2xl font-black bg-gradient-to-r from-white via-zinc-200 to-zinc-500 bg-clip-text text-transparent mt-0.5">
+                {greeting.text} ✨
+              </h1>
+              <p className="text-xs text-zinc-500 mt-0.5">{greeting.sub}</p>
             </div>
-
-            <div className="w-px h-10 bg-zinc-800 hidden md:block" />
-
-            {/* Wellness Ring */}
-            <div 
-              className={`flex items-center gap-4 cursor-pointer transition-opacity ${activeTracker === 'fitness' ? 'opacity-40 grayscale' : 'opacity-100'}`}
-              onClick={() => setActiveTracker(prev => prev === 'wellness' ? 'both' : 'wellness')}
+            <button
+              onClick={() => setShowCalendarModal(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-semibold text-zinc-400 hover:text-white transition-all cursor-pointer active:scale-95"
+              style={{ background: 'rgba(39,39,42,0.7)', border: '1px solid rgba(255,255,255,0.07)' }}
             >
-              <ProgressRing progress={wellnessProgress} size={90} strokeWidth={6} ringColor="#0ea5e9" />
-              <div>
-                <p className="text-[10px] text-sky-500 uppercase font-bold tracking-wider">Wellness & Hygiene</p>
-                <p className="text-lg font-bold text-white mt-0.5">
-                  {wellnessCompleted} <span className="text-zinc-600 font-medium">/ {wellnessTotal}</span>
-                </p>
+              <Calendar size={15} />
+              Calendar
+            </button>
+          </div>
+
+          {/* ── Hero Progress Card ── */}
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.05 }}
+            className="relative rounded-3xl overflow-hidden"
+            style={{
+              background: 'linear-gradient(145deg, rgba(30,30,36,0.95), rgba(18,18,22,0.85))',
+              border: '1px solid rgba(255,255,255,0.06)',
+              backdropFilter: 'blur(20px)',
+            }}
+          >
+            {/* Subtle gradient glow top */}
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+
+            <div className="p-5">
+              {/* Top row: streak + filter tabs */}
+              <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center gap-2">
+                  {topStreak > 0 && (
+                    <motion.div
+                      initial={{ scale: 0.8 }}
+                      animate={{ scale: 1 }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full"
+                      style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.25)' }}
+                    >
+                      <Flame size={13} className="text-amber-400" />
+                      <span className="text-[12px] font-bold text-amber-400">{topStreak}d</span>
+                    </motion.div>
+                  )}
+                  <div
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full"
+                    style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.2)' }}
+                  >
+                    <Zap size={12} className="text-emerald-400" />
+                    <span className="text-[12px] font-bold text-emerald-400">{overallCompleted}/{overallTotal}</span>
+                  </div>
+                </div>
+
+                {/* Filter toggle pills */}
+                <div
+                  className="flex items-center gap-0.5 p-1 rounded-2xl"
+                  style={{ background: 'rgba(0,0,0,0.3)' }}
+                >
+                  {[
+                    { id: 'both',     label: 'All' },
+                    { id: 'fitness',  label: '💪' },
+                    { id: 'wellness', label: '🌿' },
+                  ].map(({ id, label }) => (
+                    <button
+                      key={id}
+                      onClick={() => setActiveTracker(id)}
+                      className="px-3 py-1 rounded-xl text-[11px] font-bold transition-all cursor-pointer"
+                      style={{
+                        background: activeTracker === id ? 'rgba(16,185,129,0.2)' : 'transparent',
+                        color: activeTracker === id ? '#10b981' : '#71717a',
+                        border: activeTracker === id ? '1px solid rgba(16,185,129,0.3)' : '1px solid transparent',
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Two rings side by side */}
+              <div className="grid grid-cols-2 gap-4">
+                {/* Fitness ring */}
+                <motion.div
+                  className="flex flex-col items-center gap-3 p-4 rounded-2xl cursor-pointer transition-all"
+                  style={{
+                    background: activeTracker === 'wellness'
+                      ? 'rgba(0,0,0,0.2)'
+                      : 'rgba(244,63,94,0.06)',
+                    border: `1px solid ${activeTracker === 'wellness' ? 'rgba(255,255,255,0.04)' : 'rgba(244,63,94,0.15)'}`,
+                    opacity: activeTracker === 'wellness' ? 0.35 : 1,
+                  }}
+                  onClick={() => setActiveTracker((p) => p === 'fitness' ? 'both' : 'fitness')}
+                  whileTap={{ scale: 0.96 }}
+                >
+                  <ProgressRing
+                    progress={fitnessProgress}
+                    size={96}
+                    strokeWidth={7}
+                    ringColor="#f43f5e"
+                    completed={fitnessCompleted}
+                    total={fitnessTotal}
+                  />
+                  <div className="text-center">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-rose-500">Fitness</p>
+                    <p className="text-xs text-zinc-500 mt-0.5">{fitnessCompleted} done</p>
+                  </div>
+                </motion.div>
+
+                {/* Wellness ring */}
+                <motion.div
+                  className="flex flex-col items-center gap-3 p-4 rounded-2xl cursor-pointer transition-all"
+                  style={{
+                    background: activeTracker === 'fitness'
+                      ? 'rgba(0,0,0,0.2)'
+                      : 'rgba(14,165,233,0.06)',
+                    border: `1px solid ${activeTracker === 'fitness' ? 'rgba(255,255,255,0.04)' : 'rgba(14,165,233,0.15)'}`,
+                    opacity: activeTracker === 'fitness' ? 0.35 : 1,
+                  }}
+                  onClick={() => setActiveTracker((p) => p === 'wellness' ? 'both' : 'wellness')}
+                  whileTap={{ scale: 0.96 }}
+                >
+                  <ProgressRing
+                    progress={wellnessProgress}
+                    size={96}
+                    strokeWidth={7}
+                    ringColor="#0ea5e9"
+                    completed={wellnessCompleted}
+                    total={wellnessTotal}
+                  />
+                  <div className="text-center">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-sky-500">Wellness</p>
+                    <p className="text-xs text-zinc-500 mt-0.5">{wellnessCompleted} done</p>
+                  </div>
+                </motion.div>
               </div>
             </div>
           </motion.div>
 
-          {/* Chronological Daily Checklist */}
-          <div className="space-y-6">
+          {/* ── Slot-grouped Habit Checklist ── */}
+          <div className="space-y-4">
             {CHRONOLOGICAL_SLOTS.map((slot) => {
               const { fitness, wellness } = groupedHabits[slot];
               if (fitness.length === 0 && wellness.length === 0) return null;
-              
-              const isCollapsed = collapsedSlots[slot];
-              
+
+              const meta = SLOT_META[slot];
               let completedCount = 0;
               let totalCount = 0;
-              
+
               if (activeTracker !== 'wellness') {
-                completedCount += fitness.filter((h) => completionMap[h.id]).length;
-                totalCount += fitness.length;
+                completedCount += fitness.filter((h)  => completionMap[h.id]).length;
+                totalCount     += fitness.length;
               }
               if (activeTracker !== 'fitness') {
                 completedCount += wellness.filter((h) => completionMap[h.id]).length;
-                totalCount += wellness.length;
+                totalCount     += wellness.length;
               }
-              
               if (totalCount === 0) return null;
 
+              const isCollapsed = collapsedSlots[slot];
+              const isDone = completedCount === totalCount;
+
               return (
-                <div key={slot} className="space-y-3">
-                  {/* Slot Bar */}
+                <motion.div
+                  key={slot}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="rounded-3xl overflow-hidden"
+                  style={{
+                    border: `1px solid ${isDone ? 'rgba(16,185,129,0.2)' : 'rgba(255,255,255,0.05)'}`,
+                    background: 'rgba(18,18,22,0.7)',
+                    backdropFilter: 'blur(12px)',
+                  }}
+                >
+                  {/* Slot header button */}
                   <button
                     onClick={() => toggleSlotCollapse(slot)}
-                    className="w-full flex items-center justify-between px-2 text-left"
+                    className="w-full flex items-center justify-between px-4 py-3.5 cursor-pointer"
+                    style={{
+                      background: isDone
+                        ? 'linear-gradient(135deg, rgba(16,185,129,0.08), transparent)'
+                        : `linear-gradient(135deg, rgba(30,30,35,0.8), transparent)`,
+                    }}
                   >
-                    <div className="flex items-center gap-2">
-                      <h2 className="text-xs font-bold text-zinc-400 uppercase tracking-widest">
-                        {getTimeSlotLabel(slot)}
-                      </h2>
-                      {completedCount === totalCount && (
-                        <span className="text-[9px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full font-bold">
-                          ✓ Complete
-                        </span>
+                    <div className="flex items-center gap-3">
+                      {/* Time icon */}
+                      <div
+                        className="w-8 h-8 rounded-xl flex items-center justify-center text-sm"
+                        style={{ background: `${meta.accent}18`, border: `1px solid ${meta.accent}30` }}
+                      >
+                        {meta.emoji}
+                      </div>
+                      <div className="text-left">
+                        <p className="text-sm font-bold text-zinc-200 leading-tight">{meta.label}</p>
+                        <p className="text-[10px] text-zinc-600 mt-0.5">{completedCount}/{totalCount} tasks</p>
+                      </div>
+                      {isDone && (
+                        <motion.span
+                          initial={{ scale: 0 }}
+                          animate={{ scale: 1 }}
+                          className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                          style={{ background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.25)' }}
+                        >
+                          ✓ Done
+                        </motion.span>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 text-xs text-zinc-500">
-                      <span>{completedCount} / {totalCount}</span>
-                      {isCollapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+
+                    <div className="flex items-center gap-2">
+                      {/* Mini progress bar */}
+                      <div className="w-16 h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
+                        <motion.div
+                          className="h-full rounded-full"
+                          style={{ background: isDone ? '#10b981' : meta.accent }}
+                          initial={{ width: '0%' }}
+                          animate={{ width: `${(completedCount / totalCount) * 100}%` }}
+                          transition={{ duration: 0.6, ease: 'easeOut' }}
+                        />
+                      </div>
+                      <motion.div
+                        animate={{ rotate: isCollapsed ? 0 : 180 }}
+                        transition={{ duration: 0.2 }}
+                      >
+                        <ChevronDown size={15} className="text-zinc-600" />
+                      </motion.div>
                     </div>
                   </button>
 
+                  {/* Habit list */}
                   <AnimatePresence>
                     {!isCollapsed && (
                       <motion.div
-                        className="space-y-2"
                         initial={{ height: 0, opacity: 0 }}
                         animate={{ height: 'auto', opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.25 }}
+                        className="overflow-hidden"
                       >
-                        {/* Fitness Sub-section */}
-                        {fitness.length > 0 && activeTracker !== 'wellness' && (
-                          <div className="space-y-2">
-                            {fitness.map((habit, idx) => (
-                              <HabitCard
-                                key={habit.id}
-                                habit={habit}
-                                completed={!!completionMap[habit.id]}
-                                onToggle={() => toggleHabit(habit.id)}
-                                index={idx}
-                              />
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Wellness Sub-section */}
-                        {wellness.length > 0 && activeTracker !== 'fitness' && (
-                          <div className="space-y-2 mt-2">
-                            {wellness.map((habit, idx) => (
-                              <HabitCard
-                                key={habit.id}
-                                habit={habit}
-                                completed={!!completionMap[habit.id]}
-                                onToggle={() => toggleHabit(habit.id)}
-                                index={idx}
-                              />
-                            ))}
-                          </div>
-                        )}
+                        <div className="px-3 pb-3 pt-1 space-y-2">
+                          {activeTracker !== 'wellness' && fitness.map((habit, idx) => (
+                            <HabitCard
+                              key={habit.id}
+                              habit={habit}
+                              completed={!!completionMap[habit.id]}
+                              onToggle={() => toggleHabit(habit.id)}
+                              index={idx}
+                            />
+                          ))}
+                          {activeTracker !== 'fitness' && wellness.map((habit, idx) => (
+                            <HabitCard
+                              key={habit.id}
+                              habit={habit}
+                              completed={!!completionMap[habit.id]}
+                              onToggle={() => toggleHabit(habit.id)}
+                              index={idx}
+                            />
+                          ))}
+                        </div>
                       </motion.div>
                     )}
                   </AnimatePresence>
-                </div>
+                </motion.div>
               );
             })}
           </div>
         </div>
 
-        {/* RIGHT COLUMN: Macro Calculator Sidebar (Desktop-only, Drawer on Mobile) */}
+        {/* ─────────────────────────────────────────────────────────
+            RIGHT COLUMN — Macro Calculator (Desktop sidebar)
+        ───────────────────────────────────────────────────────── */}
         <div className="hidden lg:block lg:col-span-3">
-          <MacroCalculator />
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.15 }}
+            className="sticky top-6"
+          >
+            <MacroCalculator />
+          </motion.div>
         </div>
       </div>
 
-      {/* MOBILE DRAWER: Left Treatment Drawer */}
+      {/* ═══════════════════════════════════════════════════
+          MOBILE DRAWERS
+      ═══════════════════════════════════════════════════ */}
+
+      {/* Left — Treatment Queue */}
       <AnimatePresence>
         {showLeftDrawer && (
           <NonRegularDrawer isOpen={showLeftDrawer} onClose={() => setShowLeftDrawer(false)} />
         )}
       </AnimatePresence>
 
-      {/* MOBILE DRAWER: Right Macro Calculator Drawer */}
+      {/* Right — Macro Calculator */}
       <AnimatePresence>
         {showRightDrawer && (
           <motion.div
-            className="fixed inset-0 z-[100] flex justify-end bg-black/60 backdrop-blur-sm lg:hidden"
+            className="fixed inset-0 z-[100] flex justify-end lg:hidden"
+            style={{ background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(8px)' }}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={() => setShowRightDrawer(false)}
           >
             <motion.div
-              className="glass-card h-full w-80 max-w-[85vw] p-5 flex flex-col space-y-4 shadow-2xl overflow-y-auto"
+              className="h-full w-[88vw] max-w-sm flex flex-col shadow-2xl overflow-y-auto"
+              style={{
+                background: 'linear-gradient(160deg, rgba(22,22,28,0.98), rgba(14,14,18,0.98))',
+                borderLeft: '1px solid rgba(255,255,255,0.07)',
+              }}
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
-              transition={{ type: 'spring', damping: 25, stiffness: 250 }}
+              transition={{ type: 'spring', damping: 28, stiffness: 280 }}
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between pb-2 border-b border-zinc-800">
-                <h3 className="text-xs font-bold text-white uppercase tracking-wider">Nutrition Calc</h3>
-                <button onClick={() => setShowRightDrawer(false)} className="text-zinc-400 hover:text-white cursor-pointer">
-                  <X size={16} />
+              {/* Drawer handle + header */}
+              <div
+                className="flex items-center justify-between px-5 py-4"
+                style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-xl bg-emerald-500/15 flex items-center justify-center">
+                    <ClipboardList size={14} className="text-emerald-400" />
+                  </div>
+                  <span className="text-sm font-bold text-white tracking-wide">Nutrition Calc</span>
+                </div>
+                <button
+                  onClick={() => setShowRightDrawer(false)}
+                  className="w-8 h-8 rounded-xl flex items-center justify-center text-zinc-500 hover:text-white transition-colors cursor-pointer"
+                  style={{ background: 'rgba(255,255,255,0.06)' }}
+                >
+                  <X size={15} />
                 </button>
               </div>
-              <MacroCalculator />
+              <div className="flex-1 p-4">
+                <MacroCalculator />
+              </div>
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Calendar History Modal */}
+      {/* Calendar Modal */}
       <AnimatePresence>
         {showCalendarModal && (
           <CalendarModal isOpen={showCalendarModal} onClose={() => setShowCalendarModal(false)} />
@@ -390,7 +574,7 @@ export default function Today() {
   );
 }
 
-// Inline Helper Component for Left Sidebar on Desktop
+/* ─── Desktop-only sidebar component ────────────────────────── */
 function NonRegularSidebar({ toggleHabit, completionMap }) {
   const dayOfWeek = getDayOfWeek();
   const gapHabits = useLiveQuery(() => db.habits.where('frequency').equals('gap').toArray(), []);
@@ -400,26 +584,26 @@ function NonRegularSidebar({ toggleHabit, completionMap }) {
     return gapHabits.filter((h) => h.schedule && h.schedule.includes(dayOfWeek));
   }, [gapHabits, dayOfWeek]);
 
+  if (!gapHabits) return <div className="w-5 h-5 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin mx-auto" />;
+
   return (
-    <div className="space-y-4">
-      <div>
-        <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-bold mb-2">Today's Treatment</p>
-        {todayGaps.length > 0 ? (
-          <div className="space-y-2">
-            {todayGaps.map((habit) => (
-              <HabitCard
-                key={habit.id}
-                habit={habit}
-                completed={!!completionMap[habit.id]}
-                onToggle={() => toggleHabit(habit.id)}
-                index={0}
-              />
-            ))}
-          </div>
-        ) : (
-          <p className="text-xs text-zinc-600 italic">No gap tasks scheduled today</p>
-        )}
-      </div>
+    <div className="space-y-3">
+      {todayGaps.length > 0 ? (
+        todayGaps.map((habit) => (
+          <HabitCard
+            key={habit.id}
+            habit={habit}
+            completed={!!completionMap[habit.id]}
+            onToggle={() => toggleHabit(habit.id)}
+            index={0}
+          />
+        ))
+      ) : (
+        <div className="text-center py-6">
+          <p className="text-2xl mb-2">😴</p>
+          <p className="text-xs text-zinc-600 font-medium">No gap tasks today</p>
+        </div>
+      )}
     </div>
   );
 }
